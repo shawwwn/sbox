@@ -111,10 +111,17 @@ unshare --mount --propagation slave \
 		cd "/tmp/$CONTAINER_NAME"
 		mount -t proc proc rootfs/proc
 		mount -t tmpfs tmpfs rootfs/tmp
-		mount -t sysfs -o ro sysfs rootfs/sys
-		mount --rbind /dev rootfs/dev
+		# mount -t sysfs -o ro sysfs rootfs/sys # mount once net ns is back
+		mount --rbind /sys rootfs/sys
+		mount --rbind /dev rootfs/dev # -o ro
+		# mount --rbind /run rootfs/run # -o ro # mount once net ns is back
 
-		mount --bind -o ro /etc/resolv.conf rootfs/etc/resolv.conf
+		if [ ! -z "\$(readlink rootfs/etc/resolv.conf)" ]; then
+			# remove symlink if found
+			rm rootfs/etc/resolv.conf
+			touch rootfs/etc/resolv.conf
+		fi
+		mount --bind \$(readlink -f /etc/resolv.conf) rootfs/etc/resolv.conf
 
 		user_inode=$(readlink /proc/self/ns/user | cut -c7-16) # user ns
 		if [ ! -z "$USER_NAMESPACE" ]; then
