@@ -22,6 +22,16 @@ Run program in sandbox
 sbox [-n|--container-name NAME] [-r|--user-root USER] [-h|--help] PROGRAM
 ```
 
+e.g.,
+
+```bash
+# run apt in a privileged sandbox
+sbox apt update
+
+# run apt in a un-privileged sandbox, with mapping to user1
+sbox -r user1 bash
+```
+
 * **-n | --container-name NAME**
     
     Name of the container, will create rootfs under `/tmp/NAME` via **overlayfs**
