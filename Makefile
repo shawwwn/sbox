@@ -1,7 +1,10 @@
 PROGS = sbox
 DIR = /usr/bin
 
-.PHONY: install uninstall
+.PHONY: install uninstall all
+
+all:
+	@echo "'make install' or 'make uninstall'"
 
 install:
 	@for prog in ${PROGS}; do \
@@ -11,7 +14,6 @@ install:
 	done
 
 uninstall:
-	
 	@for prog in ${PROGS}; do \
 		path=${DIR}/$$prog; \
 		echo "RM $$path"; \
