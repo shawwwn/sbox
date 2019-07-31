@@ -19,9 +19,10 @@
 CONTAINER_NAME=default
 USER_NAMESPACE=""
 PROGRAM="bash"
+USER="root"
 
 function help {
-	echo "usage: $0: [-n|--container-name NAME] [-r|--user-root] [-h|--help] PROGRAM"
+	echo "usage: $0: [-n|--container-name NAME] [-r|--user-root USER] [-h|--help] PROGRAM"
 }
 
 function cleanup {
@@ -49,10 +50,11 @@ done
 
 # process options
 OPTIND=1
-while getopts n:rh opt; do
+while getopts n:r:h opt; do
 	case $opt in
 		n)                  CONTAINER_NAME=$OPTARG ;;
-		r)                  USER_NAMESPACE="--user --map-root-user" ;;
+		r)                  USER_NAMESPACE="--user --map-root-user"
+		                    USER=$OPTARG ;;
 		h)                  help
 		                    exit ;;
 		?)                  help
@@ -79,20 +81,8 @@ else
 fi
 
 
-# display info
-echo "container name: \"$CONTAINER_NAME\"" 
-[ ! -z "$USER_NAMESPACE" ] && echo "user namespace mode"
-# TODO: Add a mode to run sandbox under a different uid.
-#       First setup everything as root and setuid() to an unprivileged user_A
-#       just before unshare().
-#       Then map uid of user_A to root in new namespaces, so programs inside 
-#       sandbox will still be run by root except this root has as much 
-#       privileges as user_A.
-
-
-
+echo "container name: \"$CONTAINER_NAME\""
 cleanup # clean up last execution (if any)
-
 pushd /tmp > /dev/null
 
 # create/load rootfs
@@ -107,54 +97,15 @@ else
 fi
 
 # mount rootfs via overlayfs
+# TODO: another lower layer for snapshot
 mount -t overlay \
 	-o lowerdir=/,upperdir="$CONTAINER_NAME/upper",workdir="$CONTAINER_NAME/workdir" \
 	overlay "$CONTAINER_NAME/rootfs"
-
 popd > /dev/null
 
+
 # create new namespace
-# TODO: drop priv
-if [ -z "$USER_NAMESPACE" ]; then
-	# root namespace
-	user_mount="$(cat <<-EOF
-		mount --rbind -o ro /dev rootfs/dev
-		mount -t sysfs -o ro sysfs rootfs/sys
-		EOF
-	)"
-else
-	# user namespace
-	user_mount="$(cat <<-EOF
-		mount -t tmpfs tmpfs rootfs/dev
-		pushd rootfs/dev >/dev/null
-
-		touch null zero random urandom full tty
-		mount --bind /dev/null null
-		mount --bind /dev/zero zero
-		mount --bind /dev/random random
-		mount --bind /dev/urandom urandom
-		mount --bind /dev/full full
-		mount --bind /dev/tty tty
-
-		ln -s /proc/self/fd fd
-		ln -s /proc/self/core kcore
-		ln -s /proc/self/fd/0 stdin
-		ln -s /proc/self/fd/1 stdout
-		ln -s /proc/self/fd/2 stderr
-
-		mytty=\$(tty)
-		mkdir shm pts ptmx
-		ln -s /dev/pts/ptmx ptmx
-		if [ -t 1 ] && [ -f \$mytty ]; then
-			touch console
-			mount --bind \$mytty console
-		fi
-		mount -t devpts devpts /dev/pts
-
-		popd >/dev/null
-		EOF
-	)"
-fi
+sudo -u $USER \
 unshare --mount --propagation slave \
 	--pid --net --uts --ipc --cgroup\
 	--kill-child $USER_NAMESPACE \
@@ -163,12 +114,16 @@ unshare --mount --propagation slave \
 		cd "/tmp/$CONTAINER_NAME"
 		mount -t proc proc rootfs/proc
 		mount -t tmpfs tmpfs rootfs/tmp
+		mount -t sysfs -o ro sysfs rootfs/sys
+		mount --rbind /dev rootfs/dev
 
-		$user_mount
-
-		rm rootfs/etc/resolv.conf
-		touch rootfs/etc/resolv.conf
 		mount --bind /etc/resolv.conf rootfs/etc/resolv.conf
+
+		user_inode=$(readlink /proc/self/ns/user | cut -c7-16) # user ns
+		if [ ! -z "$USER_NAMESPACE" ]; then
+			echo "new user ns: \$user_inode"
+			echo "as user: \$USER(\$(id -u \$USER))"
+		fi
 
 		echo "Enter container \"$CONTAINER_NAME\": "
 		exec chroot /tmp/$CONTAINER_NAME/rootfs $PROGRAM
