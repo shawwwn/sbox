@@ -139,5 +139,9 @@ unshare --mount --propagation slave \
 
 cleanup
 trap - EXIT # free trap
+
+#TODO: save snapshot
+
+
 echo "done!"
 
