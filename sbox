@@ -15,7 +15,6 @@
 #
 # Usage: sbox [-n|--container-name NAME] [-r|--user-root] [-d|--snapshot-dir DIR] [-h|--help] PROGRAM
 #
-
 CONTAINER_NAME=default					# default container name
 SNAPSHOT_DIR="snapshot"					# default snapshot directory name
 
@@ -49,7 +48,7 @@ function cleanup {
 }
 trap cleanup EXIT
 trap "ret=$?; cleanup; exit $ret" INT QUIT TERM HUP
-
+set -m # job control
 
 
 # transform long options to short ones
@@ -97,55 +96,102 @@ fi
 
 echo "container name: \"$CONTAINER_NAME\""
 cleanup # clean up last execution (if any)
-[ ! -d "/tmp$PREFIX_DIR" ] && mkdir "/tmp$PREFIX_DIR"
-pushd "/tmp$PREFIX_DIR" > /dev/null
+mkdir "/tmp$PREFIX_DIR" >/dev/null 2>&1
+pushd "/tmp$PREFIX_DIR" >/dev/null
 
 # create/load rootfs
-if [ ! -d "$CONTAINER_NAME" ]; then
-	echo "create rootfs for \"$CONTAINER_NAME\""
-	mkdir "$CONTAINER_NAME"
-	cd "$CONTAINER_NAME"
-	mkdir dirty workdir rootfs
-else
-	echo "load previous rootfs for \"$CONTAINER_NAME\""
-	cd "$CONTAINER_NAME"
-fi
+mkdir -p "$CONTAINER_NAME/dirty" >/dev/null 2>&1
+mkdir -p "$CONTAINER_NAME/workdir" >/dev/null 2>&1
+mkdir -p "$CONTAINER_NAME/rootfs" >/dev/null 2>&1
+cd "$CONTAINER_NAME" # /tmp/sbox/$CONTAINER_NAME
 SNAPSHOT_DIR=$(realpath "$SNAPSHOT_DIR") # resolve to abs path
-[ ! -d "$SNAPSHOT_DIR" ] && mkdir "$SNAPSHOT_DIR" # create snapshot directory
-cd ..
+if [ ! -d "$SNAPSHOT_DIR" ]; then
+	mkdir -p "$SNAPSHOT_DIR" >/dev/null 2>&1 # create snapshot directory
+else
+	echo "load previous snapshot for \"$CONTAINER_NAME\""
+fi
 
 # mount rootfs via overlayfs
 # [/] -> [snapshot_dir] -> [dirty] <= file i/o
 mount -t overlay \
-	-o lowerdir="$SNAPSHOT_DIR":/,upperdir="$CONTAINER_NAME/dirty",workdir="$CONTAINER_NAME/workdir" \
-	overlay "$CONTAINER_NAME/rootfs"
-popd > /dev/null
+	-o lowerdir="$SNAPSHOT_DIR":/,upperdir="dirty",workdir="workdir" \
+	overlay "rootfs"
 
 # remove symlink if found
-pushd "/tmp$PREFIX_DIR/$CONTAINER_NAME" >/dev/null
 if [ ! -z "\$(readlink rootfs/etc/resolv.conf)" ]; then
 	rm rootfs/etc/resolv.conf
 	touch rootfs/etc/resolv.conf
 fi
 popd >/dev/null
 
+
+# prep sandbox network
+eth_setup() {
+	P1=$1
+	P2=$2
+	ip link add "veth_$CONTAINER_NAME" type veth peer name veth0 # create pair eth
+	ip addr add 192.168.50.1/30 dev "veth_$CONTAINER_NAME" # 192.168.50.1 - 192.168.50.2
+	ip link set "veth_$CONTAINER_NAME" up
+
+	iptables -t nat -A POSTROUTING -s 192.168.50.1/30 -o eth0 -j MASQUERADE # 192.168.50.1 - 192.168.50.2
+	iptables -A FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT
+	iptables -A FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT
+
+	read unshare_pid <$P1 # wait for sandbox pid
+	rm $P1
+	if [ ! -n "$unshare_pid" ] || [ ! "$unshare_pid" -eq "$unshare_pid" ] 2>/dev/null; then
+		echo "Error: Network setup failed -- unable to get unshare pid!" >&2
+		exit 1
+	fi
+	echo "sandbox pid: $unshare_pid"
+	touch "/var/run/netns/ns_$CONTAINER_NAME"
+	mount --bind "/proc/$unshare_pid/ns/net" "/var/run/netns/ns_$CONTAINER_NAME"
+	ip link set veth0 netns "ns_$CONTAINER_NAME" # send veth0 to sandbox
+	ip netns exec "ns_$CONTAINER_NAME" ip addr add 192.168.50.2/30 dev veth0 # 192.168.50.1 - 192.168.50.2
+	ip netns exec "ns_$CONTAINER_NAME" ip link set veth0 up
+	ip netns exec "ns_$CONTAINER_NAME" ip link set lo up
+	ip netns exec "ns_$CONTAINER_NAME" ip route add default via 192.168.50.1 # route all traffic to go through veth0
+	umount "/var/run/netns/ns_$CONTAINER_NAME"
+	rm "/var/run/netns/ns_$CONTAINER_NAME"
+	echo "eth_setup() exit" >$P2 # signal main process that we are done
+}
+
+PIPE1=$(mktemp -u) # for receiving namespace pid in task
+PIPE2=$(mktemp -u) # for receiving task finish signal 
+mkfifo $PIPE1 $PIPE2
+echo "eth_setup() start"
+(eth_setup $PIPE1 $PIPE2 &) # async
+
+
 # create new namespace
 sudo -u $USER \
 unshare --mount --propagation slave \
-	--pid --net --uts --ipc --cgroup \
+	--pid --uts --ipc --cgroup \
 	--kill-child $USER_NAMESPACE \
 	--fork \
+	--net \
 	bash -c "$(cat <<-EOF
+	set -m
+		# send current shell pid to background task
+		cat /proc/self/status | grep ^PPid: | awk '{print \$2}' >$PIPE1
+		
+		# wait for background task to complete (optional)
+		read str <$PIPE2
+		echo "\$str"
+		rm $PIPE2
+
+		# mountings
 		cd "/tmp$PREFIX_DIR/$CONTAINER_NAME"
 		mount -t proc proc rootfs/proc
 		mount -t tmpfs tmpfs rootfs/tmp
-		mount -t sysfs -o ro sysfs rootfs/sys
-		# mount --rbind /sys rootfs/sys # mount if net ns is not present
-		mount --rbind /dev rootfs/dev # -o ro
+		mount -t sysfs -r sysfs rootfs/sys
+		# mount --rbind -r /sys rootfs/sys # mount if net ns is not present
+		mount --rbind /dev rootfs/dev # -r ?
 		mount -t tmpfs tmpfs rootfs/run
-		# mount --rbind /run rootfs/run # -o ro # this or resolv.conf
+		# mount --rbind -r /run rootfs/run # this or resolv.conf
 		mount --bind \$(readlink -f /etc/resolv.conf) rootfs/etc/resolv.conf
 
+		# display extra info if enters user namespace
 		user_inode=$(readlink /proc/self/ns/user | cut -c7-16) # user ns
 		if [ ! -z "$USER_NAMESPACE" ]; then
 			echo "new user ns: \$user_inode"
@@ -155,16 +201,21 @@ unshare --mount --propagation slave \
 		echo "Enter container \"$CONTAINER_NAME\": "
 
 		exec chroot rootfs $@
-		echo "Error: program shouldn't reach here."
+		echo "Error: program shouldn't reach here." >&2
 		EOF
 	)"
 
 
+# release netns
+iptables -t nat -D POSTROUTING -s 192.168.50.1/30 -o eth0 -j MASQUERADE # 192.168.50.1 - 192.168.50.2
+iptables -D FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT
+iptables -D FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT
+ip link delete "veth_$CONTAINER_NAME" >/dev/null 2>&1
 cleanup
 trap - EXIT # free trap
 
 #TODO: save snapshot
 
-
+jobs
 echo "done!"
 
