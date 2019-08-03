@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# sBox
+# sbox
 # Run programs in a sandbox environment without writting to rootfs.
 #
 # This program is NOT a full-fledge container like docker!

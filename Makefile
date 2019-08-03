@@ -1,10 +1,10 @@
-PROGS = sbox
+PROGS = sbox sbox-fstool
 DIR = /usr/bin
 
 .PHONY: install uninstall all
 
 all:
-	@echo "'make install' or 'make uninstall'"
+	@echo "run 'make install' or 'make uninstall'"
 
 install:
 	@for prog in ${PROGS}; do \

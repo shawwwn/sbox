@@ -1,0 +1,196 @@
+#!/bin/bash
+#
+# sbox-fstool
+# Tool for commit, prune, merge files created in sandbox environment by sbox.
+#
+# Copyright: 2019 Shawwwn, shawwwn1@gmail.com
+# License: MIT
+#
+# Usage: sbox-fstool commit DIRTY_DIR SNAPS_DIR
+#        sbox-fstool prune SNAPS_DIR ROOTFS_DIR
+#        sbox-fstool merge SNAPS_DIR ROOTFS_DIR
+#        sbox-fstool [-h|--help]
+#
+
+# globals
+CMD="merge" # CMD = { commit, merge, prune }
+DIRTY_DIR="/tmp/sbox/default/dirty"
+SNAPS_DIR="/tmp/sbox/default/snapshot"
+ROOTFS_DIR="/"
+
+function help {
+	local executable=$(basename $0)
+	echo "usage: $executable commit DIRTY_DIR SNAPS_DIR"
+	echo "       $executable prune SNAPS_DIR ROOTFS_DIR"
+	echo "       $executable merge SNAPS_DIR ROOTFS_DIR"
+	echo "       $executable [-h|--help]"
+	echo ""
+	echo "Tool for commit, prune, merge files created in sandbox environment by sbox."
+	echo ""
+	echo "	commit DIRTY_DIR SNAPS_DIR"
+	echo "		Move contents from <DIRTY_DIR> directory to snapshot directory."
+	echo "		This is usually run when sandbox exits."
+	echo ""
+	echo "	prune SNAPS_DIR ROOTFS_DIR"
+	echo "		Remove identical files in both <SNAPS_DIR> and <ROOTFS_DIR>."
+	echo "		Help to reduce snapshot size."
+	echo ""
+	echo "	merge SNAPS_DIR ROOTFS_DIR"
+	echo "		Merge changes from <SNAPS_DIR> to <ROOTFS_DIR>."
+	echo "		If you want to make changes happened in sandbox permanent."
+}
+
+if [ "$#" -ne 3 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+	help
+	exit 2
+fi
+
+# preparations
+CMD=$(echo "$CMD" | awk '{print tolower($0)}')
+DIRTY_DIR=$(realpath $DIRTY_DIR) # strip trailing '/'
+SNAPS_DIR=$(realpath $SNAPS_DIR) # strip trailing '/'
+ROOTFS_DIR=$(realpath $ROOTFS_DIR) # strip trailing '/'
+
+#############################################################
+# Check if file is a 0:0 device file
+#############################################################
+is_removed() {
+	if [ "$(stat -c '%t:%T %F' $1)" = "0:0 character special file" ]; then
+		return 0
+	fi
+	return 1
+}
+
+#############################################################
+# Check if file has xattr "opaque" flag
+#############################################################
+is_opaque() {
+	if [ -d "$1" ] && 
+		getfattr -d -m "" "$1" 2>/dev/null | \
+			grep "trusted.overlay.opaque=\"y\"" >/dev/null 2>&1; then
+			return 0
+	fi
+	return 1
+}
+
+#############################################################
+# Check if two files have the same meta data
+#############################################################
+same_meta() {
+	local p1=$(stat -c '%A %u:%g %s' $1) 
+	local p2=$(stat -c '%A %u:%g %s' $2)
+	[ -d "$1" ] && p1=$(echo $p1 | cut -d' ' -f-2) # remove size info if is dir
+	[ -d "$2" ] && p2=$(echo $p2 | cut -d' ' -f-2)
+	if [ "$p1" = "$p2" ]; then
+		return 0
+	fi
+	return 1
+}
+
+#############################################################
+# Compare two files byte-by-byte
+#############################################################
+same_content() {
+	if [ -d "$1" ] && [ -d "$2" ]; then
+		return 0 # return if both are dirs
+	fi
+	cmp -s "$1" "$2"
+	return $?
+}
+
+#############################################################
+# Copy files/directories from dirty directory to snapshot 
+# directory.
+# If a directory is marked 'opaque' in dirty dir, then 
+# remove corresponding directory from snapshot dir before copy.
+#############################################################
+commit() {
+	# getfattr -d -m "" ./ | grep "trusted.overlay.opaque=\"y\""
+	# commit
+	# mv -Tf /tmp/sbox/default/dirty /tmp/sbox/default/snapshot
+	# cp -rT --preserve=xattr dirty snapshot
+
+	# TODO: commit func
+	:
+}
+
+#############################################################
+# OverlayFS sometimes produce files that are not modified.
+# (i.e., when you open file for r/w but not writing down anything)
+# This function detects if a file in snapshot and in rootfs are 
+# identical then remove it from snapshot directory.
+#############################################################
+prune() {
+	local path_snapshot="$1"
+	local path_rootfs="$2"
+
+	# both files present
+	if [ ! -z "$path_snapshot" ] && [ ! -z "$path_rootfs" ]; then
+		if ! is_opaque "$path_snapshot" && \
+			same_meta "$path_snapshot" "$path_rootfs" && \
+			same_content "$path_snapshot" "$path_rootfs"; then
+			echo "possible dup: $path_snapshot"
+			# rm "$path_snapshot" >/dev/null 2>&1 || \
+			# rmdir "$path_snapshot" >/dev/null 2>&1 && \
+			# echo "remove: $path_snapshot"
+		fi
+	fi
+}
+
+#############################################################
+# Copy files from snapshot directory to rootfs.
+# Replace directory from rootfs with opaque directory in snapshot
+# Remove file/directory from rootfs if a device file is in snapshot
+#############################################################
+merge() {
+	local path_snapshot="$1"
+	local path_rootfs="$2"
+
+	if [ ! -z "$path_snapshot" ]; then
+		if is_opaque "$path_snapshot"; then
+			echo "to replace dir: $path_snapshot"
+			# rm -r "$path_rootfs" && \
+			# mv -T "$path_snapshot" "$path_rootfs"
+			setfattr --remove="trusted.overlay.opaque" "$path_rootfs" # remove xattr
+		elif is_removed "$path_snapshot"; then
+			echo "to remove: $path_snapshot"
+			# rm -r "$path_snapshot"
+			# rm -r "$path_rootfs"
+		fi
+	fi
+}
+
+#############################################################
+# Walk thru the upper directory.
+# Based on file path from the upper dir, generate the file
+# path for the lower dir.
+# Then call the callback function on these two paths.
+# Arguments:
+#   $1: upper directory
+#   $2: lower directory
+#   $3: callback function on each file found in the upper dir
+#       func(upper_file, lower_file)
+#############################################################
+walk_dir() {
+	local upper="$1"
+	local lower="$2"
+	local callback="$3"
+
+	OIFS=$IFS; IFS=$'\n' # backup separator
+	local path_list=($(find "$upper/"))
+	path_list=("${path_list[@]:1}") # omit '/'
+	local path_wc=$(echo $upper | tr -d '\n\r' | wc -c) # word count w/o newline
+	printf "%-50s   %s\n" "[upper]" "[lower]"
+	for path in "${path_list[@]}"; do
+		path_relative=$(echo $path | cut -c$((path_wc+1))-)
+		path_upper=$(realpath -esq "$path")
+		path_lower=$(realpath -esq "$lower$path_relative")
+
+		printf "%-50s | %s\n" "$path_upper" "$path_lower"
+		$callback "$path_upper" "$path_lower"
+	done
+	IFS=$OIFS # restore separator
+}
+
+walk_dir "$SNAPS_DIR" "$ROOTFS_DIR" merge
+walk_dir "$SNAPS_DIR" "$ROOTFS_DIR" prune
