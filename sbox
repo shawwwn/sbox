@@ -144,6 +144,7 @@ eth_setup() {
 		exit 1
 	fi
 	echo "sandbox pid: $unshare_pid"
+	mkdir -p "/var/run/netns" >/dev/null 2>&1
 	touch "/var/run/netns/ns_$CONTAINER_NAME"
 	mount --bind "/proc/$unshare_pid/ns/net" "/var/run/netns/ns_$CONTAINER_NAME"
 	ip link set veth0 netns "ns_$CONTAINER_NAME" # send veth0 to sandbox
@@ -158,7 +159,7 @@ eth_setup() {
 
 PIPE1=$(mktemp -u) # for receiving namespace pid in task
 PIPE2=$(mktemp -u) # for receiving task finish signal 
-mkfifo $PIPE1 $PIPE2
+sudo -u $USER mkfifo $PIPE1 $PIPE2
 echo "eth_setup() start"
 (eth_setup $PIPE1 $PIPE2 &) # async
 
@@ -166,10 +167,9 @@ echo "eth_setup() start"
 # create new namespace
 sudo -u $USER \
 unshare --mount --propagation slave \
-	--pid --uts --ipc --cgroup \
+	--pid --uts --ipc --cgroup 	--net\
 	--kill-child $USER_NAMESPACE \
 	--fork \
-	--net \
 	bash -c "$(cat <<-EOF
 	set -m
 		# send current shell pid to background task
