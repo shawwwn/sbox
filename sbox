@@ -170,8 +170,7 @@ unshare --mount --propagation slave \
 	--pid --uts --ipc --cgroup 	--net\
 	--kill-child $USER_NAMESPACE \
 	--fork \
-	bash -c "$(cat <<-EOF
-	set -m
+	bash -c """$(cat <<-EOF
 		# send current shell pid to background task
 		cat /proc/self/status | grep ^PPid: | awk '{print \$2}' >$PIPE1
 		
@@ -200,10 +199,11 @@ unshare --mount --propagation slave \
 
 		echo "Enter container \"$CONTAINER_NAME\": "
 
-		exec chroot rootfs $@
+		exec chroot rootfs \
+			bash -c 'cd ~; exec $@'
 		echo "Error: program shouldn't reach here." >&2
 		EOF
-	)"
+	)"""
 
 
 # release netns
