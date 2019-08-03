@@ -6,9 +6,9 @@
 # Copyright: 2019 Shawwwn, shawwwn1@gmail.com
 # License: MIT
 #
-# Usage: sbox-fstool commit DIRTY_DIR SNAPS_DIR
-#        sbox-fstool prune SNAPS_DIR ROOTFS_DIR
-#        sbox-fstool merge SNAPS_DIR ROOTFS_DIR
+# Usage: sbox-fstool commit NAME [-d|--snapshot-dir SNAPS_DIR]
+#        sbox-fstool prune NAME [-d|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]
+#        sbox-fstool merge NAME [-d|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]
 #        sbox-fstool [-h|--help]
 #
 
@@ -20,24 +20,28 @@ ROOTFS_DIR="/"
 
 function help {
 	local executable=$(basename $0)
-	echo "usage: $executable commit DIRTY_DIR SNAPS_DIR"
-	echo "       $executable prune SNAPS_DIR ROOTFS_DIR"
-	echo "       $executable merge SNAPS_DIR ROOTFS_DIR"
+	echo "usage: $executable commit NAME [-d|--snapshot-dir SNAPS_DIR]"
+	echo "       $executable prune NAME [-d|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]"
+	echo "       $executable merge NAME [-d|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]"
 	echo "       $executable [-h|--help]"
 	echo ""
 	echo "Tool for commit, prune, merge files created in sandbox environment by sbox."
 	echo ""
-	echo "	commit DIRTY_DIR SNAPS_DIR"
-	echo "		Move contents from <DIRTY_DIR> directory to snapshot directory."
+	echo " 	NAME:       sandbox's name, default='default'"
+	echo " 	SNAPS_DIR:  sandbox's snapshot, default='/tmp/sbox/<NAME>/snapshot'"
+	echo " 	ROOTFS_DIR: system's rootfs for mounting beneath sandbox's writable layer, default='/'"
+	echo ""
+	echo "	commit:"
+	echo "		Move uncommit contents from dirty directory of sandbox <NAME> to its <SNAPS_DIR> directory."
 	echo "		This is usually run when sandbox exits."
 	echo ""
-	echo "	prune SNAPS_DIR ROOTFS_DIR"
-	echo "		Remove identical files in both <SNAPS_DIR> and <ROOTFS_DIR>."
+	echo "	prune:"
+	echo "		Remove sandbox <NAME>'s identical files in <SNAPS_DIR> if they are also in <ROOTFS_DIR>"
 	echo "		Help to reduce snapshot size."
 	echo ""
-	echo "	merge SNAPS_DIR ROOTFS_DIR"
-	echo "		Merge changes from <SNAPS_DIR> to <ROOTFS_DIR>."
-	echo "		If you want to make changes happened in sandbox permanent."
+	echo "	merge:"
+	echo "		Merge changes from <SNAPS_DIR> to <ROOTFS_DIR> for sandbox <NAME>."
+	echo "		If you want to make changes permanent."
 }
 
 if [ "$#" -ne 3 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
@@ -99,28 +103,50 @@ same_content() {
 }
 
 #############################################################
-# Copy files/directories from dirty directory to snapshot 
+# Copy all files/directories from dirty directory to snapshot 
 # directory.
 # If a directory is marked 'opaque' in dirty dir, then 
 # remove corresponding directory from snapshot dir before copy.
 #############################################################
-commit() {
-	# getfattr -d -m "" ./ | grep "trusted.overlay.opaque=\"y\""
-	# commit
-	# mv -Tf /tmp/sbox/default/dirty /tmp/sbox/default/snapshot
-	# cp -rT --preserve=xattr dirty snapshot
+commit_all() {
+	local path_dirty="$1"
+	local path_snapshot="$2"
 
-	# TODO: commit func
-	:
+	if [ ! -d "$path_dirty" ]; then
+		echo "nothing to commit"
+		exit 1
+	fi
+
+	# remove opaque in snapshot
+	local path_wc=$(echo $path_dirty | tr -d '\n\r' | wc -c) # word count w/o newline
+	while IFS=$'\n' read -r line; do
+		opaque=$(echo "$line" | pcregrep -io1 -e 'file: (.+)$')
+		if [ ! -z "$opaque" ]; then
+			path_relative=$(echo "$opaque" | cut -c$((path_wc+1))-)
+			snapshot=$(realpath -esq "$path_snapshot$path_relative")
+			if [ ! -z "$snapshot" ]; then
+				echo "remove opaque: $snapshot"
+				rm -r "$snapshot"
+			fi
+		fi
+	done < <(getfattr --dump --match="trusted.overlay.opaque" \
+					--absolute-names --physical --recursive \
+					"$path_dirty")
+
+	# move directory
+	echo "move dir: $path_dirty -> $path_snapshot"
+	cp -aTf "$path_dirty" "$path_snapshot"
+	rm -r "$path_dirty"
 }
 
 #############################################################
 # OverlayFS sometimes produce files that are not modified.
 # (i.e., when you open file for r/w but not writing down anything)
-# This function detects if a file in snapshot and in rootfs are 
-# identical then remove it from snapshot directory.
+# This function detects if a snapshot file is identical to its 
+# corresponding pair in rootfs, then remove it from snapshot 
+# directory.
 #############################################################
-prune() {
+prune_one() {
 	local path_snapshot="$1"
 	local path_rootfs="$2"
 
@@ -130,19 +156,21 @@ prune() {
 			same_meta "$path_snapshot" "$path_rootfs" && \
 			same_content "$path_snapshot" "$path_rootfs"; then
 			echo "possible dup: $path_snapshot"
-			# rm "$path_snapshot" >/dev/null 2>&1 || \
-			# rmdir "$path_snapshot" >/dev/null 2>&1 && \
-			# echo "remove: $path_snapshot"
+			rm "$path_snapshot" >/dev/null 2>&1 || \
+			rmdir "$path_snapshot" >/dev/null 2>&1 && \
+			echo "remove dup: $path_snapshot"
 		fi
 	fi
 }
 
 #############################################################
-# Copy files from snapshot directory to rootfs.
-# Replace directory from rootfs with opaque directory in snapshot
-# Remove file/directory from rootfs if a device file is in snapshot
+# Copy a file from snapshot directory to rootfs.
+# If a directory is marked 'opaque' in snapshot, remove its 
+# corresponding pair in rootfs.
+# If a file/directory is a device file, remove its 
+# corresponding pair in rootfs.
 #############################################################
-merge() {
+merge_one() {
 	local path_snapshot="$1"
 	local path_rootfs="$2"
 
@@ -182,7 +210,7 @@ walk_dir() {
 	local path_wc=$(echo $upper | tr -d '\n\r' | wc -c) # word count w/o newline
 	printf "%-50s   %s\n" "[upper]" "[lower]"
 	for path in "${path_list[@]}"; do
-		path_relative=$(echo $path | cut -c$((path_wc+1))-)
+		path_relative=$(echo "$path" | cut -c$((path_wc+1))-)
 		path_upper=$(realpath -esq "$path")
 		path_lower=$(realpath -esq "$lower$path_relative")
 
@@ -192,5 +220,6 @@ walk_dir() {
 	IFS=$OIFS # restore separator
 }
 
-walk_dir "$SNAPS_DIR" "$ROOTFS_DIR" merge
-walk_dir "$SNAPS_DIR" "$ROOTFS_DIR" prune
+# walk_dir "$SNAPS_DIR" "$ROOTFS_DIR" merge_one
+walk_dir "$SNAPS_DIR" "$ROOTFS_DIR" prune_one
+#commit_all "$DIRTY_DIR" "$SNAPS_DIR"
