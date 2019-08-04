@@ -6,23 +6,17 @@
 # Copyright: 2019 Shawwwn, shawwwn1@gmail.com
 # License: MIT
 #
-# Usage: sbox-fstool commit NAME [-d|--snapshot-dir SNAPS_DIR]
-#        sbox-fstool prune NAME [-d|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]
-#        sbox-fstool merge NAME [-d|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]
+# Usage: sbox-fstool commit NAME [-s|--snapshot-dir SNAPS_DIR]
+#        sbox-fstool prune NAME [-s|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]
+#        sbox-fstool merge NAME [-s|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]
 #        sbox-fstool [-h|--help]
 #
 
-# globals
-CMD="merge" # CMD = { commit, merge, prune }
-DIRTY_DIR="/tmp/sbox/default/dirty"
-SNAPS_DIR="/tmp/sbox/default/snapshot"
-ROOTFS_DIR="/"
-
 function help {
 	local executable=$(basename $0)
-	echo "usage: $executable commit NAME [-d|--snapshot-dir SNAPS_DIR]"
-	echo "       $executable prune NAME [-d|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]"
-	echo "       $executable merge NAME [-d|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]"
+	echo "usage: $executable commit [NAME] [-s|--snapshot-dir SNAPS_DIR]"
+	echo "       $executable prune [NAME] [-s|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]"
+	echo "       $executable merge [NAME] [-s|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]"
 	echo "       $executable [-h|--help]"
 	echo ""
 	echo "Tool for commit, prune, merge files created in sandbox environment by sbox."
@@ -44,16 +38,39 @@ function help {
 	echo "		If you want to make changes permanent."
 }
 
-if [ "$#" -ne 3 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-	help
-	exit 2
-fi
+# transform long options to short ones
+for arg in "$@"; do
+	shift
+	case "$arg" in
+		"--snapshot-dir")   set -- "$@" "-s" ;;
+		"--rootfs-dir")     set -- "$@" "-r" ;;
+		"--help")           set -- "$@" "-h" ;;
+		*)                  set -- "$@" "$arg"
+	esac
+done
 
-# preparations
-CMD=$(echo "$CMD" | awk '{print tolower($0)}')
-DIRTY_DIR=$(realpath $DIRTY_DIR) # strip trailing '/'
-SNAPS_DIR=$(realpath $SNAPS_DIR) # strip trailing '/'
-ROOTFS_DIR=$(realpath $ROOTFS_DIR) # strip trailing '/'
+# process options
+OPTIND=1
+while getopts n:r:d:h opt; do
+	case $opt in
+		s)                  SNAPS_DIR=$OPTARG ;;
+		r)                  ROOTFS_DIR=$OPTARG ;;
+		h)                  help; exit ;;
+		?)                  help; exit 2 ;;
+	esac
+done
+shift $(expr $OPTIND - 1)
+
+# globals
+CMD=$(echo "$1" | awk '{print tolower($0)}')
+CONTAINER_NAME="$([ -z "$2" ] && echo 'default' || echo "$2")"
+[ -z "$DIRTY_DIR" ] && DIRTY_DIR="/tmp/sbox/$CONTAINER_NAME/dirty"
+[ -z "$SNAPS_DIR" ] && SNAPS_DIR="/tmp/sbox/$CONTAINER_NAME/snapshot"
+[ -z "$ROOTFS_DIR" ] && ROOTFS_DIR="/"
+DIRTY_DIR=$(realpath $DIRTY_DIR 2>/dev/null)
+SNAPS_DIR=$(realpath $SNAPS_DIR 2>/dev/null)
+ROOTFS_DIR=$(realpath $ROOTFS_DIR 2>/dev/null)
+
 
 #############################################################
 # Check if file is a 0:0 device file
@@ -112,9 +129,10 @@ commit_all() {
 	local path_dirty="$1"
 	local path_snapshot="$2"
 
-	if [ ! -d "$path_dirty" ]; then
+	# directory doesn't exist or is empty
+	if [ ! -d "$path_dirty" ] || [ -z "$(ls -A $path_dirty)" ]; then
 		echo "nothing to commit"
-		exit 1
+		exit 0
 	fi
 
 	# remove opaque in snapshot
@@ -137,6 +155,7 @@ commit_all() {
 	echo "move dir: $path_dirty -> $path_snapshot"
 	cp -aTf "$path_dirty" "$path_snapshot"
 	rm -r "$path_dirty"
+	mkdir "$path_dirty"
 }
 
 #############################################################
@@ -162,6 +181,19 @@ prune_one() {
 		fi
 	fi
 }
+prune_all() {
+	local snapshot_dir="$1"
+	local rootfs_dir="$2"
+
+	# directory doesn't exist or is empty
+	if [ ! -d "$snapshot_dir" ] || [ -z "$(ls -A $snapshot_dir)" ]; then
+		echo "nothing to prune"
+		exit 0
+	fi
+
+	# compare file one-by-one
+	walk_dir "$snapshot_dir" "$rootfs_dir" prune_one
+}
 
 #############################################################
 # Copy a file from snapshot directory to rootfs.
@@ -176,16 +208,35 @@ merge_one() {
 
 	if [ ! -z "$path_snapshot" ]; then
 		if is_opaque "$path_snapshot"; then
-			echo "to replace dir: $path_snapshot"
-			# rm -r "$path_rootfs" && \
-			# mv -T "$path_snapshot" "$path_rootfs"
+			echo "replace dir: $path_snapshot"
+			rm -r "$path_rootfs" && \
+			mv -T "$path_snapshot" "$path_rootfs"
 			setfattr --remove="trusted.overlay.opaque" "$path_rootfs" # remove xattr
 		elif is_removed "$path_snapshot"; then
-			echo "to remove: $path_snapshot"
-			# rm -r "$path_snapshot"
-			# rm -r "$path_rootfs"
+			echo "remove: $path_snapshot"
+			rm -r "$path_snapshot"
+			rm -r "$path_rootfs"
 		fi
 	fi
+}
+merge_all() {
+	local snapshot_dir="$1"
+	local rootfs_dir="$2"
+
+	# directory doesn't exist or is empty
+	if [ ! -d "$snapshot_dir" ] || [ -z "$(ls -A $snapshot_dir)" ]; then
+		echo "nothing to merge"
+		exit 0
+	fi
+
+	# process files marked for removal
+	walk_dir "$snapshot_dir" "$rootfs_dir" merge_one
+
+	# move directory
+	echo "move dir: $snapshot_dir -> $snapshot_dir"
+	cp -aTf "$snapshot_dir" "$snapshot_dir"
+	rm -r "$snapshot_dir"
+	mkdir "$snapshot_dir"
 }
 
 #############################################################
@@ -220,6 +271,43 @@ walk_dir() {
 	IFS=$OIFS # restore separator
 }
 
-# walk_dir "$SNAPS_DIR" "$ROOTFS_DIR" merge_one
-walk_dir "$SNAPS_DIR" "$ROOTFS_DIR" prune_one
-#commit_all "$DIRTY_DIR" "$SNAPS_DIR"
+#############################################################
+# Input a literal variable name, check if that variable is
+# undefined or empty in bash.
+#############################################################
+check_var() {
+	local var="$1"
+	local silent="$2"
+
+	local val="${!var}"
+	if [ -z "$val" ]; then
+		[ "$slient" != "-s" ] && echo "Invalid \"$var\"!"
+		return 1
+	fi
+	return 0
+}
+
+
+# main()
+case "$CMD" in
+	commit)
+		check_var DIRTY_DIR || exit 2
+		check_var SNAPS_DIR || exit 2
+		commit_all "$DIRTY_DIR" "$SNAPS_DIR"
+		;;
+	prune)
+		check_var SNAPS_DIR || exit 2
+		check_var ROOTFS_DIR || exit 2
+		prune_all "$SNAPS_DIR" "$ROOTFS_DIR"
+		;;
+	merge)
+		check_var SNAPS_DIR || exit 2 # directory not exist
+		check_var ROOTFS_DIR || exit 2 # directory not exist
+		merge_all "$SNAPS_DIR" "$ROOTFS_DIR"
+		;;
+	*)
+		echo "Invalid command!"
+		help
+		exit 2
+		;;
+esac
