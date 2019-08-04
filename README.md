@@ -42,7 +42,9 @@ In addition, each sandbox have its own network stack(has internet access), mount
 
 It's more like a stripped down version of docker.
 
-## `sbox` Usage: 
+
+
+## *sbox* usage: 
 
 Run program in sandbox
 
@@ -59,7 +61,9 @@ sbox apt install curl
 # run program in a un-privileged sandbox, with privileges of user 'shawwwn'
 sbox -r shawwwn bash
 ```
+
 #### OPTION:
+
 * **-n | --container-name NAME**
     
     Name of the sandbox.\
@@ -90,7 +94,8 @@ sbox -r shawwwn bash
     Display help information.
 
 
-## `sbox-fstool` Usage: 
+
+## *sbox-fstool* usage: 
 
 Tool for commit, prune, merge files created in sandbox environment by sbox.
 
