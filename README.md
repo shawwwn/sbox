@@ -2,6 +2,37 @@
 
 Run programs in a sandbox environment without writting to rootfs.
 
+```bash
+# sbox bash
+create new snapshot at /tmp/sbox/default/snapshot
+Enter sandbox "default":
+# pwd
+/root
+# ls
+# mkdir xxxx          # create directory in sandbox
+# cd xxxx/
+# touch TEST          # create file in sandbox
+#
+# exit
+exit
+dirty
+└── root
+    ├── .bash_history
+    └── xxxx
+        └── TEST
+
+2 directories, 2 files
+36K data generated.
+> Commit changes to snapshot [y/n]? Y
+commited to /tmp/sbox/default/snapshot
+Snapshot size 36K (2 files, 2 directories).
+> Merge snapshot with local filesystem [y/n]? N
+#
+# pwd
+/root
+# ls                  # nothing gets written to our rootfs
+```
+
 
 ## Description:
 
