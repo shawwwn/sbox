@@ -233,8 +233,8 @@ merge_all() {
 	walk_dir "$snapshot_dir" "$rootfs_dir" merge_one
 
 	# move directory
-	echo "move dir: $snapshot_dir -> $snapshot_dir"
-	cp -aTf "$snapshot_dir" "$snapshot_dir"
+	echo "move dir: $snapshot_dir -> $rootfs_dir"
+	cp -aTf "$snapshot_dir" "$rootfs_dir"
 	rm -r "$snapshot_dir"
 	mkdir "$snapshot_dir"
 }
@@ -259,13 +259,11 @@ walk_dir() {
 	local path_list=($(find "$upper/"))
 	path_list=("${path_list[@]:1}") # omit '/'
 	local path_wc=$(echo $upper | tr -d '\n\r' | wc -c) # word count w/o newline
-	printf "%-50s   %s\n" "[upper]" "[lower]"
 	for path in "${path_list[@]}"; do
 		path_relative=$(echo "$path" | cut -c$((path_wc+1))-)
 		path_upper=$(realpath -esq "$path")
 		path_lower=$(realpath -esq "$lower$path_relative")
 
-		printf "%-50s | %s\n" "$path_upper" "$path_lower"
 		$callback "$path_upper" "$path_lower"
 	done
 	IFS=$OIFS # restore separator
