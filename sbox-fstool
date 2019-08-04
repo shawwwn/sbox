@@ -14,16 +14,11 @@
 
 function help {
 	local executable=$(basename $0)
-	echo "usage: $executable commit [NAME] [-s|--snapshot-dir SNAPS_DIR]"
-	echo "       $executable prune [NAME] [-s|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]"
-	echo "       $executable merge [NAME] [-s|--snapshot-dir SNAPS_DIR] [-r|--rootfs-dir ROOTFS_DIR]"
+	echo "usage: $executable commit [NAME] [-s SNAPS_DIR]"
+	echo "       $executable prune [NAME] [-s SNAPS_DIR] [-r ROOTFS_DIR] [-v]"
+	echo "       $executable merge [NAME] [-s SNAPS_DIR] [-r ROOTFS_DIR] [-v]"
 	echo "       $executable [-h|--help]"
-	echo ""
 	echo "Tool for commit, prune, merge files created in sandbox environment by sbox."
-	echo ""
-	echo " 	NAME:       sandbox's name, default='default'"
-	echo " 	SNAPS_DIR:  sandbox's snapshot, default='/tmp/sbox/<NAME>/snapshot'"
-	echo " 	ROOTFS_DIR: system's rootfs for mounting beneath sandbox's writable layer, default='/'"
 	echo ""
 	echo "	commit:"
 	echo "		Move uncommit contents from dirty directory of sandbox <NAME> to its <SNAPS_DIR> directory."
@@ -36,30 +31,49 @@ function help {
 	echo "	merge:"
 	echo "		Merge changes from <SNAPS_DIR> to <ROOTFS_DIR> for sandbox <NAME>."
 	echo "		If you want to make changes permanent."
+	echo ""
+	echo "	-s, --snapshot-dir SNAPS_DIR     Sandbox's snapshot directory,"
+	echo "	                                 default='/tmp/sbox/<NAME>/snapshot'."
+	echo "	                                 Sandbox's writable layer, default='/'."
+	echo "	-r, --rootfs-dir ROOTFS_DIR      System's rootfs for mounting beneath "
+	echo "	                                 sandbox's writable layer, default='/'."
+	echo "	-v, --verbose                    Print more infomation."
+	echo "	-h, --help                       Display this help and exit."
 }
 
-# transform long options to short ones
-for arg in "$@"; do
-	shift
-	case "$arg" in
-		"--snapshot-dir")   set -- "$@" "-s" ;;
-		"--rootfs-dir")     set -- "$@" "-r" ;;
-		"--help")           set -- "$@" "-h" ;;
-		*)                  set -- "$@" "$arg"
-	esac
-done
+# process command line arguments
+VERBOSE=false
+ARGS=$(getopt -q \
+	-o "s:r:vh" \
+	-l "snapshot-dir:,rootfs-dir:,verbose,help" \
+	-n "sbox-fstool" -- "$@")
+if [ $? -ne 0 ]; then
+	echo "Invalid Arguments!"
+	exit 2
+fi
 
-# process options
-OPTIND=1
-while getopts n:r:d:h opt; do
-	case $opt in
-		s)                  SNAPS_DIR=$OPTARG ;;
-		r)                  ROOTFS_DIR=$OPTARG ;;
-		h)                  help; exit ;;
-		?)                  help; exit 2 ;;
+eval set -- "$ARGS"
+while true; do
+	case "$1" in
+		-s|--snapshot-dir)
+			SNAPS_DIR="$2"
+			shift 2;;
+		-r|--rootfs-dir)
+			ROOTFS_DIR="$2"
+			shift 2;;
+		-v|--verbose)
+			echo "verbose on"
+			VERBOSE=true 
+			shift ;;
+		-h|--help)
+			help
+			shift
+			exit ;;
+		--)
+			shift
+			break ;;
 	esac
 done
-shift $(expr $OPTIND - 1)
 
 # globals
 CMD=$(echo "$1" | awk '{print tolower($0)}')
@@ -143,7 +157,7 @@ commit_all() {
 			path_relative=$(echo "$opaque" | cut -c$((path_wc+1))-)
 			snapshot=$(realpath -esq "$path_snapshot$path_relative")
 			if [ ! -z "$snapshot" ]; then
-				echo "remove opaque: $snapshot"
+				$VERBOSE && echo "remove opaque: $snapshot"
 				rm -r "$snapshot"
 			fi
 		fi
@@ -152,10 +166,10 @@ commit_all() {
 					"$path_dirty")
 
 	# move directory
-	echo "move dir: $path_dirty -> $path_snapshot"
+	$VERBOSE && echo "move dir: $path_dirty -> $path_snapshot"
 	cp -aTf "$path_dirty" "$path_snapshot"
 	rm -r "$path_dirty"
-	mkdir "$path_dirty"
+	# mkdir "$path_dirty"
 }
 
 #############################################################
@@ -174,10 +188,10 @@ prune_one() {
 		if ! is_opaque "$path_snapshot" && \
 			same_meta "$path_snapshot" "$path_rootfs" && \
 			same_content "$path_snapshot" "$path_rootfs"; then
-			echo "possible dup: $path_snapshot"
+			$VERBOSE && echo "possible dup: $path_snapshot"
 			rm "$path_snapshot" >/dev/null 2>&1 || \
 			rmdir "$path_snapshot" >/dev/null 2>&1 && \
-			echo "remove dup: $path_snapshot"
+			$VERBOSE && echo "remove dup: $path_snapshot"
 		fi
 	fi
 }
@@ -208,12 +222,12 @@ merge_one() {
 
 	if [ ! -z "$path_snapshot" ]; then
 		if is_opaque "$path_snapshot"; then
-			echo "replace dir: $path_snapshot"
+			$VERBOSE && echo "replace dir: $path_snapshot"
 			rm -r "$path_rootfs" && \
 			mv -T "$path_snapshot" "$path_rootfs"
 			setfattr --remove="trusted.overlay.opaque" "$path_rootfs" # remove xattr
 		elif is_removed "$path_snapshot"; then
-			echo "remove: $path_snapshot"
+			$VERBOSE && echo "remove: $path_snapshot"
 			rm -r "$path_snapshot"
 			rm -r "$path_rootfs"
 		fi
@@ -233,10 +247,10 @@ merge_all() {
 	walk_dir "$snapshot_dir" "$rootfs_dir" merge_one
 
 	# move directory
-	echo "move dir: $snapshot_dir -> $rootfs_dir"
+	$VERBOSE && echo "move dir: $snapshot_dir -> $rootfs_dir"
 	cp -aTf "$snapshot_dir" "$rootfs_dir"
 	rm -r "$snapshot_dir"
-	mkdir "$snapshot_dir"
+	# mkdir "$snapshot_dir"
 }
 
 #############################################################
@@ -305,7 +319,6 @@ case "$CMD" in
 		;;
 	*)
 		echo "Invalid command!"
-		help
 		exit 2
 		;;
 esac

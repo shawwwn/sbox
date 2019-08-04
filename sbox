@@ -39,8 +39,11 @@ function help {
 	echo "		Default location is /tmp/sbox/<NAME>/snapshot."
 	echo "		You can specify the <DIR> to disk if you want to save generated files."
 	echo ""
+	echo "	-v, --verbose"
+	echo "		Print more information."
+	echo ""
 	echo "	-h, --help"
-	echo "		Display this help and exit"
+	echo "		Display this help and exit."
 }
 
 function cleanup {
@@ -70,6 +73,7 @@ for arg in "$@"; do
 		"--container-name") set -- "$@" "-n" ;;
 		"--user-root")      set -- "$@" "-u" ;;
 		"--snapshot-dir")   set -- "$@" "-d" ;;
+		"--verbose")        set -- "$@" "-v" ;;
 		"--help")           set -- "$@" "-h" ;;
 		*)                  set -- "$@" "$arg"
 	esac
@@ -77,13 +81,16 @@ done
 
 
 # process options
+VERBOSE=false
 OPTIND=1
-while getopts n:r:d:h opt; do
+while getopts n:u:d:vh opt; do
 	case $opt in
 		n)                  CONTAINER_NAME=$OPTARG ;;
 		u)                  USER_NAMESPACE_CMD="--user --map-root-user"
 		                    USER=$OPTARG ;;
 		d)                  SNAPSHOT_DIR=$OPTARG ;;
+		v)                  echo "verbose on"
+		                    VERBOSE=true ;;
 		h)                  help
 		                    exit ;;
 		?)                  help
@@ -131,7 +138,6 @@ debootstrap_firmware_layer() {
 debootstrap_sandbox() {
 	local name="$CONTAINER_NAME"
 
-	echo "container name: \"$name\""
 	mkdir "/tmp$PREFIX_DIR" >/dev/null 2>&1
 	pushd "/tmp$PREFIX_DIR" >/dev/null
 
@@ -145,8 +151,9 @@ debootstrap_sandbox() {
 	SNAPSHOT_DIR=$(realpath "$SNAPSHOT_DIR") # to abs path
 	if [ ! -d "$SNAPSHOT_DIR" ]; then
 		mkdir -p "$SNAPSHOT_DIR" >/dev/null 2>&1 # create snapshot directory
+		echo "create new snapshot at $SNAPSHOT_DIR"
 	else
-		echo "load previous snapshot for \"$name\""
+		echo "load previous snapshot from $SNAPSHOT_DIR"
 	fi
 
 	# mount rootfs via overlayfs
@@ -155,6 +162,7 @@ debootstrap_sandbox() {
 	mount -t overlay \
 		-o lowerdir="$SNAPSHOT_DIR":"$firmware_dir":/,upperdir="dirty",workdir="workdir" \
 		overlay "rootfs"
+
 	popd >/dev/null
 }
 
@@ -176,7 +184,7 @@ eth_setup() {
 		echo "Error: Network setup failed -- unable to get unshare pid!" >&2
 		exit 1
 	fi
-	echo "sandbox pid: $unshare_pid"
+	$VERBOSE && echo "sandbox pid: $unshare_pid"
 	mkdir -p "/var/run/netns" >/dev/null 2>&1
 	touch "/var/run/netns/ns_$CONTAINER_NAME"
 	mount --bind "/proc/$unshare_pid/ns/net" "/var/run/netns/ns_$CONTAINER_NAME"
@@ -196,8 +204,9 @@ debootstrap_sandbox "$CONTAINER_NAME" # create work files
 PIPE1=$(mktemp -u) # for receiving namespace pid in task
 PIPE2=$(mktemp -u) # for receiving task finish signal 
 sudo -u $USER mkfifo $PIPE1 $PIPE2
-echo "eth_setup() start"
+$VERBOSE && echo "eth_setup() start"
 (eth_setup $PIPE1 $PIPE2 &) # async
+
 
 # create new namespace
 sudo -u $USER \
@@ -211,7 +220,7 @@ unshare --mount --propagation slave \
 		
 		# wait for background task to complete (optional)
 		read str <$PIPE2
-		echo "\$str"
+		$VERBOSE && echo "\$str"
 		rm $PIPE2
 
 		# mountings
@@ -226,10 +235,10 @@ unshare --mount --propagation slave \
 		mount --bind \$(readlink -f /etc/resolv.conf) rootfs/etc/resolv.conf
 
 		# display extra info if enters user namespace
-		user_inode=$(readlink /proc/self/ns/user | cut -c7-16) # user ns
 		if [ ! -z "$USER_NAMESPACE_CMD" ]; then
-			echo "new user ns: \$user_inode"
-			echo "as user: \$USER(\$(id -u \$USER))"
+			user_inode=$(readlink /proc/self/ns/user | cut -c7-16) # user ns
+			echo "enter new user namespace \"\$user_inode\""
+			echo "as user \"\$USER\" (\$(id -u \$USER))"
 		fi
 
 		echo "Enter container \"$CONTAINER_NAME\": "
@@ -241,10 +250,47 @@ unshare --mount --propagation slave \
 	)"""
 
 cleanup
-trap - EXIT # free trap
+trap - EXIT INT QUIT TERM HUP # free traps
 
-#TODO: save snapshot
 
-jobs
-echo "done!"
+#Save snapshot
+pushd "/tmp$PREFIX_DIR/$CONTAINER_NAME" >/dev/null
 
+tree -Ca "dirty"
+size=$(du -sPh dirty | cut -f1-1)
+verbose_cmd=$($VERBOSE && echo '--verbose')
+echo "$size data generated."
+while true; do
+	read -p "> Commit changes to snapshot [y/n]? " -e -i "Y" yn
+	case $yn in
+		[Yy]* ) 
+			sbox-fstool commit "$CONTAINER_NAME" "$verbose_cmd" \
+				--snapshot-dir "$SNAPSHOT_DIR" && \
+			echo "commited to $(realpath $SNAPSHOT_DIR)"
+			break
+			;;
+		[Nn]* ) exit ;;
+		* ) ;;
+	esac
+done
+
+size=$(du -sPh "$SNAPSHOT_DIR" | cut -f1-1)
+file_count=$(find "$SNAPSHOT_DIR" -type f | wc -l)
+dir_count=$(find "$SNAPSHOT_DIR" -mindepth 1 -type d | wc -l)
+echo "Snapshot size $size ($file_count files, $dir_count directories)."
+while true; do
+	read -p "> Merge snapshot with local filesystem [y/n]? " -e -i "N" yn
+	case $yn in
+		[Yy]* ) 
+			sbox-fstool merge "$CONTAINER_NAME" "$verbose_cmd" \
+				--snapshot-dir "$SNAPSHOT_DIR" \
+				--rootfs-dir '\' && \
+			echo "snapshot merged"
+			break
+			;;
+		[Nn]* ) exit ;;
+		* ) ;;
+	esac
+done
+
+popd >/dev/null
