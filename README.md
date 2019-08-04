@@ -5,7 +5,7 @@ Run programs in a sandbox environment without writting to rootfs.
 ```bash
 # sbox bash
 create new snapshot at /tmp/sbox/default/snapshot
-Enter sandbox "default":
+Enter container "default":
 # pwd
 /root
 # ls
