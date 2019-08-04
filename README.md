@@ -42,45 +42,115 @@ In addition, each sandbox have its own network stack(has internet access), mount
 
 It's more like a stripped down version of docker.
 
-## Usage: 
+## `sbox` Usage: 
 
 Run program in sandbox
 
 ```bash
-sbox [-n|--container-name NAME] [-r|--user-root USER] [-d|--snapshot-dir DIR] [-h|--help] PROGRAM
+sbox [OPTION] PROGRAM
 ```
 
 e.g.,
 
 ```bash
-# run apt in a privileged sandbox
-sbox apt update
+# run program in a privileged sandbox
+sbox apt install curl
 
-# run apt in a un-privileged sandbox, with mapping to user1
-sbox -r user1 bash
+# run program in a un-privileged sandbox, with privileges of user 'shawwwn'
+sbox -r shawwwn bash
 ```
-
+#### OPTION:
 * **-n | --container-name NAME**
     
     Name of the sandbox.\
-    For identification purpose. Essential if you want to send another program into the sandbox. \
-    Default value is 'default'.
+    For identify different sandbox environments. \
+    A environment is basically a overlay filesystem on top your existing rootfs.\
+    Several working directories will be created under `/tmp/sbox/NAME/`. \
+    Default: 'default'
 
 * **-r | --user-root USER** 
     
-    Still need root to mount.\
-    Enable user namespace.\
-    Will drop root privileges to user `USER` right before entering *user namespace* so that sandbox will be bound by `USER`'s privilege.\
-    Finally, map `USER`'s uid to root inside sandbox.
+    Still need root to do initialization. \
+    Once initialization is done, enter *user namespace* as user `USER`.\
+    Finally, map `USER`'s uid to root inside sandbox.\
+    Program(s) run inside our sandbox will appear to be running as root but in fact only has `USER`'s privilege.\
+    Default: 'root'
 
 * **-d | --snapshot-dir DIR** 
 
-    Path of the snapshot directory storing **commited** file system changes after program exit from sandbox.\
+    Path of the snapshot directory storing **commited** file system changes after a program exits from sandbox.\
+    Default: 'snapshot'    # relative path inside /tmp/sbox/NAME/
     
+* **-v | --verbose**
+
+    Print more information.
     
 * **-h | --help**
 
     Display help information.
+
+
+## `sbox-fstool` Usage: 
+
+Tool for commit, prune, merge files created in sandbox environment by sbox.
+
+```bash
+sbox ACTION NAME [OPTION]
+```
+
+e.g.,
+```bash
+# commit to default environment
+sbox-fstool commit
+
+# suppose we want to prune sandbox call 'sb2' that has its snapshot directory at '/mnt/usb0/backup'
+ssbox-fstool prune sb2 --snapshot-dir /mnt/usb0/backup --verbose
+
+# merge default sandbox to rootfs located at '/mnt/usb0/rootfs'
+ssbox-fstool merge default --rootfs-dir /mnt/usb0/rootfs
+```
+
+#### ACTION:
+
+* **commit**
+    
+    Move uncommitted files from */tmp/sbox/NAME/dirty* to `SNAPS_DIR` directory.
+    
+* **prune**
+
+    Remove sandbox `NAME`'s identical files in `SNAPS_DIR` if they are also in `ROOTFS_DIR`.\
+    Help to reduce snapshot size.
+
+* **merge**
+
+    Merge changes from `SNAPS_DIR` to `ROOTFS_DIR` for sandbox `NAME`.\
+    If you want to make changes permanent.
+
+#### NAME:
+
+Please refer to `--container-name NAME` above.\
+Default: default
+
+#### OPTION:
+
+* **-s | --snapshot-dir SNAPS_DIR**
+
+    Used by action {*commit*, *prune*, *merge*}.\
+    Default: /tmp/sbox/<NAME>/sandbox
+    
+* **-r | --rootfs-dir ROOTFS_DIR**
+
+    Used by action {*prune*, *merge*}.\
+    Default: /
+
+* **-v | --verbose**
+
+    Print more information.
+    
+* **-h | --help**
+
+    Display help information.
+
 
 ## Note:
 
