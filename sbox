@@ -52,12 +52,6 @@ function cleanup {
 		umount "/tmp$PREFIX_DIR/$CONTAINER_NAME/rootfs"
 	fi
 
-	# release netns
-	iptables -t nat -D POSTROUTING -s 192.168.50.1/30 -o eth0 -j MASQUERADE >/dev/null 2>&1
-	iptables -D FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT >/dev/null 2>&1
-	iptables -D FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT >/dev/null 2>&1
-	ip link delete "veth_$CONTAINER_NAME" >/dev/null 2>&1
-
 	rm "$PIPE1" >/dev/null 2>&1
 	rm "$PIPE2" >/dev/null 2>&1
 }
@@ -79,7 +73,6 @@ for arg in "$@"; do
 	esac
 done
 
-
 # process options
 VERBOSE=false
 OPTIND=1
@@ -99,7 +92,6 @@ while getopts n:u:d:vh opt; do
 done
 shift $(expr $OPTIND - 1)
 
-
 # check root
 if [ $(id -u) -ne 0 ]; then
 	echo "need to run as root"
@@ -110,6 +102,7 @@ fi
 if [ -z "$1" ]; then
 	echo "nothing to run!" && help && exit 2
 fi
+
 
 #############################################################
 # The layer right above rootfs, contains initial settings.
@@ -130,6 +123,7 @@ debootstrap_firmware_layer() {
 	ln -s "/run" "var/run"
 	popd >/dev/null
 }
+
 
 #############################################################
 # Create and mount sandbox's rootfs
@@ -166,20 +160,260 @@ debootstrap_sandbox() {
 	popd >/dev/null
 }
 
-# prep sandbox network
+
+#############################################################
+# Like xargs but works with bash function
+#############################################################
+xxargs() {
+	local flag_t=false
+	[ "$1" == "-t" ] && { flag_t=true; shift; }
+	local prog="$1"
+	shift
+	local args=()
+	for arg in "$@"; do
+		args=("${args[@]}" "\"$arg\"")
+	done
+
+	local line
+	local ret=true
+	while read line; do
+		$flag_t && echo "$prog ${args[@]} $line"
+		eval "$prog ${args[@]} $line"
+		ret=$((ret | $?))
+	done
+	return $ret
+}
+
+
+#############################################################
+# convert an ip address to decimal number.
+#############################################################
+ip2num() {
+	local a b c d
+	IFS=. read -r a b c d <<< "$1"
+	echo "$(((a << 24) + (b << 16) + (c << 8) + d))"
+}
+
+
+#############################################################
+# convert a decimal number to ip address.
+#############################################################
+num2ip () {
+	local a b c d
+	a=$(((0xFF000000 & $1) >> 24))
+	b=$(((0x00FF0000 & $1) >> 16))
+	c=$(((0x0000FF00 & $1) >> 8))
+	d=$(((0x000000FF & $1) >> 0))
+	echo "$a.$b.$c.$d"
+}
+
+
+#############################################################
+# Input a masked ip representing a subnet.
+# Output the first and last ips in that subnet.
+#############################################################
+get_subnet_range() {
+	local numeric_output=false
+	[ "$1" == "-n" ] && { numeric_output=true; shift; }
+	local masked_ip="$1" # eg 10.8.3.1/24
+
+	local arr category addr
+	local start end
+	mapfile -t arr < <(ipcalc -nb $masked_ip)
+	for l in "${arr[@]}"; do
+		IFS=' ' read category addr <<< "$l"
+		if [[ $category == "Network"* ]]; then
+			start=$(echo $addr | sed 's/\/[0-9]\+//')
+		elif [[ $category == "Broadcast"* ]]; then
+			end=$addr
+		elif [[ $category == "Hostroute"* ]]; then
+			start=$addr
+			end=$addr
+		fi
+	done
+
+	if $numeric_output; then
+		echo "$(ip2num $start) $(ip2num $end)"
+	else
+		echo "$start $end"
+	fi
+}
+
+
+#############################################################
+# Get all subnets from system in ip form.
+# Output a pair of first and last addresses.
+# of spans.
+# Arguments:
+#     -n       output a pair of numbers instead of ip addr
+#############################################################
+get_sys_subnets() {
+	local flag_n
+	[ "$1" == "-n" ] && { flag_n="-n"; shift; }
+
+	ip addr show | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+' | \
+	while read -r line; do
+		local start=""
+		local end=""
+		local args=($flag_n $line)
+		read start end <<< $(get_subnet_range "${args[@]}")
+		echo "$start $end"
+	done
+}
+
+
+
+
+starts=() # global span set
+ends=() # global span set
+
+#############################################################
+# Perform union operation of the given span against a set of 
+# spans.
+# Print the union span.
+# e.g.,
+# union ([2,7], {[1,3], [5,9], [10,15]}) ==> {[1,9], [10,15]}
+# Globals:
+#     starts
+#     ends
+#############################################################
+spans_union() {
+	local s=$1
+	local e=$2
+	local start end
+	local i j
+	local len=${#starts[@]}
+
+	start=$s
+	for ((i=0; i<len; i++)); do
+		if ((s < ${starts[i]})); then
+			start=$s
+			break
+		elif ((s >= ${starts[i]})) && ((s <= ${ends[i]})); then
+			start=${starts[$i]}
+			break
+		fi
+	done
+
+	end=$e
+	for ((j=0; j<len; j++)); do
+		if ((e < ${starts[$j]})); then
+			end=$e
+			break
+		elif ((e >= ${starts[$j]})) && ((e <= ${ends[$j]})); then
+			end=${ends[$j]}
+			((j++))
+			break
+		fi
+	done
+
+	starts=("${starts[@]:0:$i}" "$start" "${starts[@]:$j}")
+	ends=("${ends[@]:0:$i}" "$end" "${ends[@]:$j}")
+	echo "$start $end"
+}
+
+
+#############################################################
+# Check if a give span intersects with a set of spans.
+# Print the end of intersection boundary.
+# e.g.,
+# intersect ([2,7], {[0,1], [10,15]}) ==> false
+# intersect ([2,7], {[0,3], [5,15]}) ==> true
+# Globals:
+#     starts
+#     ends
+#############################################################
+spans_intersected() {
+	local s=$1
+	local e=$2
+	local len=${#starts[@]}
+
+	for ((i=0; i<len; i++)); do
+		if ( ((s >= ${starts[i]})) && ((s <= ${ends[i]})) ) || \
+			( ((e >= ${starts[i]})) && ((e <= ${ends[i]})) ) || \
+			( ((s < ${starts[i]})) && ((e > ${ends[i]})) ); then
+			echo $((e>${ends[i]} ? e : ${ends[i]})) # max
+			return 0
+		fi
+	done
+	return 1
+}
+
+
+#############################################################
+# Get system subnet range as a pair of numbers.
+# Save these range pairs to a global variable by doing the 
+# same union operation against that global variable over and
+# over.
+# Globals:
+#     starts
+#     ends
+#############################################################
+save_sys_subnets_as_spans() {
+	local l h
+	while read -r l h; do
+		# echo "set $l $h"
+		spans_union $l $h >/dev/null 2>&1
+	done < <(get_sys_subnets -n)
+}
+
+
+#############################################################
+# Given a starting address and a subnet mask, return the 
+# ip address to the next available subnet.
+#############################################################
+get_avail_subnet_from_sys() {
+	local start_ip="$1"
+	local subnet_mask="$2"
+
+	local ip_dec=$(ip2num "$start_ip")
+	local ip=$start_ip
+	while [ $ip_dec -lt 4294967295 ]; do # 0xFFFFFFFF
+		ip_next=$(get_subnet_range -n "$ip/$subnet_mask" | xxargs spans_intersected)
+		if [ ! -z "$ip_next" ]; then
+			ip_dec=$((ip_next + 1))
+			ip=$(num2ip $ip_dec)
+		else
+			ip=$(get_subnet_range "$ip/$subnet_mask" | awk '{print $1}')
+			break
+		fi
+	done
+	
+	echo "$ip"
+}
+
+
+#############################################################
+# Setup network for sandbox.
+# Currently using pair-interface but better options do exist.
+# Globals:
+#     IP_A         pair ip for host
+#     IP_B         pair ip for sandbox
+#############################################################
+IP_A="192.168.50.1" # default
+IP_B="192.168.50.2" # default
 eth_setup() {
-	P1=$1
-	P2=$2
-	ip link add "veth_$CONTAINER_NAME" type veth peer name veth0 # create pair eth
-	ip addr add 192.168.50.1/30 dev "veth_$CONTAINER_NAME" # 192.168.50.1 - 192.168.50.2
+	local p1=$1 # pipe1
+	local p2=$2 # pipe2
+
+	save_sys_subnets_as_spans # load current network setup
+	local subnet_mask=30
+	local subnet_ip="$(get_avail_subnet_from_sys "$IP_A" $subnet_mask)" # start searching from default value
+	local subnet_ip_dec="$(ip2num $subnet_ip)" # ip to decimal number
+	IP_A="$(num2ip $((subnet_ip_dec + 1)))"
+	IP_B="$(num2ip $((subnet_ip_dec + 2)))"
+	echo "assigned ip $IP_B for sandbox"
+
+	ip link add "veth_$CONTAINER_NAME" type veth peer name "veth0" # veth0 for sandbox
+	ip addr add "$IP_A/$subnet_mask" dev "veth_$CONTAINER_NAME" # IP_A - IP_B
 	ip link set "veth_$CONTAINER_NAME" up
 
-	iptables -t nat -A POSTROUTING -s 192.168.50.1/30 -o eth0 -j MASQUERADE # 192.168.50.1 - 192.168.50.2
+	iptables -t nat -A POSTROUTING -s "$IP_A/$subnet_mask" -o eth0 -j MASQUERADE # IP_A - IP_B
 	iptables -A FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT
 	iptables -A FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT
 
-	read unshare_pid <$P1 # wait for sandbox pid
-	rm $P1
+	read unshare_pid <$p1 # wait for sandbox pid
+	rm $p1 # rm $PIPE1
 	if [ ! -n "$unshare_pid" ] || [ ! "$unshare_pid" -eq "$unshare_pid" ] 2>/dev/null; then
 		echo "Error: Network setup failed -- unable to get unshare pid!" >&2
 		exit 1
@@ -188,18 +422,18 @@ eth_setup() {
 	mkdir -p "/var/run/netns" >/dev/null 2>&1
 	touch "/var/run/netns/ns_$CONTAINER_NAME"
 	mount --bind "/proc/$unshare_pid/ns/net" "/var/run/netns/ns_$CONTAINER_NAME"
-	ip link set veth0 netns "ns_$CONTAINER_NAME" # send veth0 to sandbox
-	ip netns exec "ns_$CONTAINER_NAME" ip addr add 192.168.50.2/30 dev veth0 # 192.168.50.1 - 192.168.50.2
-	ip netns exec "ns_$CONTAINER_NAME" ip link set veth0 up
+	ip link set "veth0" netns "ns_$CONTAINER_NAME" # send veth0 to sandbox
+	ip netns exec "ns_$CONTAINER_NAME" ip addr add "$IP_B/$subnet_mask" dev "veth0" # IP_A - IP_B
+	ip netns exec "ns_$CONTAINER_NAME" ip link set "veth0" up
 	ip netns exec "ns_$CONTAINER_NAME" ip link set lo up
-	ip netns exec "ns_$CONTAINER_NAME" ip route add default via 192.168.50.1 # route all traffic to go through veth0
+	ip netns exec "ns_$CONTAINER_NAME" ip route add default via "$IP_A" # route all traffic to go through veth
 	umount "/var/run/netns/ns_$CONTAINER_NAME"
 	rm "/var/run/netns/ns_$CONTAINER_NAME"
-	echo "eth_setup() exit" >$P2 # signal main process that we are done
+	echo "eth_setup() exit" >$p2 # signal main process that we are done
 }
 
 
-cleanup # clean up last execution (if any)
+cleanup --keep-network # clean up last execution (if any)
 debootstrap_sandbox "$CONTAINER_NAME" # create work files
 PIPE1=$(mktemp -u) # for receiving namespace pid in task
 PIPE2=$(mktemp -u) # for receiving task finish signal 
@@ -249,9 +483,14 @@ unshare --mount --propagation slave \
 		EOF
 	)"""
 
+# clean up network
+iptables -t nat -D POSTROUTING -s "$IP_A/30" -o eth0 -j MASQUERADE >/dev/null 2>&1
+iptables -D FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT >/dev/null 2>&1
+iptables -D FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT >/dev/null 2>&1
+ip link delete "veth_$CONTAINER_NAME" >/dev/null 2>&1
+
 cleanup
 trap - EXIT INT QUIT TERM HUP # free traps
-
 
 #Save snapshot
 pushd "/tmp$PREFIX_DIR/$CONTAINER_NAME" >/dev/null

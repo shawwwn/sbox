@@ -21,7 +21,7 @@ function help {
 	echo "Tool for commit, prune, merge files created in sandbox environment by sbox."
 	echo ""
 	echo "	commit:"
-	echo "		Move uncommit contents from dirty directory of sandbox <NAME> to its <SNAPS_DIR> directory."
+	echo "		Move uncommitted files from dirty directory of sandbox <NAME> to its <SNAPS_DIR> directory."
 	echo "		This is usually run when sandbox exits."
 	echo ""
 	echo "	prune:"
