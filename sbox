@@ -135,6 +135,9 @@ debootstrap_sandbox() {
 	mkdir "/tmp$PREFIX_DIR" >/dev/null 2>&1
 	pushd "/tmp$PREFIX_DIR" >/dev/null
 
+	SNAPSHOT_DIR=$(realpath -m "$name/$SNAPSHOT_DIR") # to abs path
+	[ ! -d "$name" ] && echo "Create new container \"$CONTAINER_NAME\" with snapshot at $SNAPSHOT_DIR"
+
 	# create/load rootfs
 	mkdir -p "$name/dirty" >/dev/null 2>&1
 	mkdir -p "$name/workdir" >/dev/null 2>&1
@@ -142,11 +145,9 @@ debootstrap_sandbox() {
 	firmware_dir=$(realpath "$name/firmware") # to abs path
 	debootstrap_firmware_layer "$firmware_dir" >/dev/null 2>&1
 	cd "$name" # /tmp/sbox/$CONTAINER_NAME
-	SNAPSHOT_DIR=$(realpath "$SNAPSHOT_DIR") # to abs path
-	if [ ! -d "$SNAPSHOT_DIR" ]; then
-		mkdir -p "$SNAPSHOT_DIR" >/dev/null 2>&1 # create snapshot directory
-		echo "create new snapshot at $SNAPSHOT_DIR"
-	else
+	mkdir -p "$SNAPSHOT_DIR" >/dev/null 2>&1 # create snapshot directory
+
+	if [ ! -z "$(ls -A $SNAPSHOT_DIR)" ]; then
 		echo "load previous snapshot from $SNAPSHOT_DIR"
 	fi
 
@@ -496,19 +497,24 @@ trap - EXIT INT QUIT TERM HUP # free traps
 pushd "/tmp$PREFIX_DIR/$CONTAINER_NAME" >/dev/null
 
 tree -Ca "dirty"
-size=$(du -sPh dirty | cut -f1-1)
+size=$(du -sPh "dirty" | cut -f1-1)
 verbose_cmd=$($VERBOSE && echo '--verbose')
 echo "$size data generated."
 while true; do
-	read -p "> Commit changes to snapshot [y/n]? " -e -i "Y" yn
+	read -p "> Commit changes to snapshot? [Y/n] " -e yn
 	case $yn in
-		[Yy]* ) 
+		"" | [Yy]* )
 			sbox-fstool commit "$CONTAINER_NAME" "$verbose_cmd" \
 				--snapshot-dir "$SNAPSHOT_DIR" && \
 			echo "commited to $(realpath $SNAPSHOT_DIR)"
 			break
 			;;
-		[Nn]* ) exit ;;
+		[Nn]* )
+			echo "Abort."
+			$VERBOSE && echo "remove $(realpath -m dirty)"
+			rm -r "dirty" >/dev/null 2>&1
+			exit 0
+			;;
 		* ) ;;
 	esac
 done
@@ -518,7 +524,7 @@ file_count=$(find "$SNAPSHOT_DIR" -type f | wc -l)
 dir_count=$(find "$SNAPSHOT_DIR" -mindepth 1 -type d | wc -l)
 echo "Snapshot size $size ($file_count files, $dir_count directories)."
 while true; do
-	read -p "> Merge snapshot with local filesystem [y/n]? " -e -i "N" yn
+	read -p "> Merge snapshot with local filesystem? [N/y] " -e yn
 	case $yn in
 		[Yy]* ) 
 			sbox-fstool merge "$CONTAINER_NAME" "$verbose_cmd" \
@@ -527,7 +533,10 @@ while true; do
 			echo "snapshot merged"
 			break
 			;;
-		[Nn]* ) exit ;;
+		"" | [Nn]* ) 
+			echo "Abort."
+			exit
+			;;
 		* ) ;;
 	esac
 done
