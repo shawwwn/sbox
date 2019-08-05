@@ -24,10 +24,11 @@ dirty
 
 2 directories, 2 files
 36K data generated.
-> Commit changes to snapshot [y/n]? Y
+> Commit changes to snapshot? [Y/n] y
 commited to /tmp/sbox/default/snapshot
-Snapshot size 36K (2 files, 2 directories).
-> Merge snapshot with local filesystem [y/n]? N
+Snapshot size 36K (1 files, 1 directories).
+> Merge snapshot with local filesystem? [N/y] n
+Abort.
 #
 # pwd
 /root
