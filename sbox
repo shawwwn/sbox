@@ -420,12 +420,17 @@ eth_setup() {
 	iptables -A FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT
 	iptables -A FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT
 
-	read unshare_pid <$p1 # wait for sandbox pid
+	# wait for sandbox pid
+	read unshare_pid <$p1
 	rm $p1 # rm $PIPE1
 	if [ ! -n "$unshare_pid" ] || [ ! "$unshare_pid" -eq "$unshare_pid" ] 2>/dev/null; then
 		fail "Unable to get unshare pid when setting up network!"
 	fi
 	$VERBOSE && echo "sandbox pid: $unshare_pid"
+
+	# write pid file
+	echo $unshare_pid > "/tmp$PREFIX_DIR/$CONTAINER_NAME/container.pid"
+
 	mkdir -p "/var/run/netns" >/dev/null 2>&1
 	touch "/var/run/netns/ns_$CONTAINER_NAME"
 	mount --bind "/proc/$unshare_pid/ns/net" "/var/run/netns/ns_$CONTAINER_NAME"
@@ -441,7 +446,7 @@ eth_setup() {
 
 debootstrap_sandbox "$CONTAINER_NAME" # create work files
 PIPE1=$(mktemp -u) # for receiving namespace pid in task
-PIPE2=$(mktemp -u) # for receiving task finish signal 
+PIPE2=$(mktemp -u) # for receiving task finish signal
 sudo -u $USER mkfifo $PIPE1 $PIPE2
 $VERBOSE && echo "eth_setup() start"
 (eth_setup $PIPE1 $PIPE2 &) # async
