@@ -396,6 +396,12 @@ IP_B="192.168.50.2" # default
 eth_setup() {
 	local p1=$1 # pipe1
 	local p2=$2 # pipe2
+	fail() {
+		local _
+		read -t 0.1 _ <$p1
+		echo "Error: $1" >$p2
+		exit 1
+	}
 
 	save_sys_subnets_as_spans # load current network setup
 	local subnet_mask=30
@@ -406,6 +412,7 @@ eth_setup() {
 	echo "assigned ip $IP_B for sandbox"
 
 	ip link add "veth_$CONTAINER_NAME" type veth peer name "veth0" # veth0 for sandbox
+	[ $? -ne 0 ] && fail "Unable to create network interfaces!"
 	ip addr add "$IP_A/$subnet_mask" dev "veth_$CONTAINER_NAME" # IP_A - IP_B
 	ip link set "veth_$CONTAINER_NAME" up
 
@@ -416,8 +423,7 @@ eth_setup() {
 	read unshare_pid <$p1 # wait for sandbox pid
 	rm $p1 # rm $PIPE1
 	if [ ! -n "$unshare_pid" ] || [ ! "$unshare_pid" -eq "$unshare_pid" ] 2>/dev/null; then
-		echo "Error: Network setup failed -- unable to get unshare pid!" >&2
-		exit 1
+		fail "Unable to get unshare pid when setting up network!"
 	fi
 	$VERBOSE && echo "sandbox pid: $unshare_pid"
 	mkdir -p "/var/run/netns" >/dev/null 2>&1
@@ -433,8 +439,6 @@ eth_setup() {
 	echo "eth_setup() exit" >$p2 # signal main process that we are done
 }
 
-
-cleanup --keep-network # clean up last execution (if any)
 debootstrap_sandbox "$CONTAINER_NAME" # create work files
 PIPE1=$(mktemp -u) # for receiving namespace pid in task
 PIPE2=$(mktemp -u) # for receiving task finish signal 
@@ -452,10 +456,14 @@ unshare --mount --propagation slave \
 	bash -c """$(cat <<-EOF
 		# send current shell pid to background task
 		cat /proc/self/status | grep ^PPid: | awk '{print \$2}' >$PIPE1
-		
-		# wait for background task to complete (optional)
+
 		read str <$PIPE2
-		$VERBOSE && echo "\$str"
+		if [[ "\$str" == "Error:"* ]]; then
+			echo -e "\\e[31m\$str\\e[0m" >&2
+			exit 1
+		else
+			$VERBOSE && echo "\$str"
+		fi
 		rm $PIPE2
 
 		# mountings
@@ -483,6 +491,11 @@ unshare --mount --propagation slave \
 		echo "Error: program shouldn't reach here." >&2
 		EOF
 	)"""
+
+if [ $? -ne 0 ]; then
+	echo "Abort."
+	exit 1
+fi
 
 # clean up network
 iptables -t nat -D POSTROUTING -s "$IP_A/30" -o eth0 -j MASQUERADE >/dev/null 2>&1
