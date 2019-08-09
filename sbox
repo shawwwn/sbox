@@ -46,7 +46,7 @@ function help {
 	echo "		Display this help and exit."
 }
 
-function cleanup {
+function mount_teardown {
 	# umount overlayfs
 	if mountpoint -q "/tmp$PREFIX_DIR/$CONTAINER_NAME/rootfs"; then
 		umount "/tmp$PREFIX_DIR/$CONTAINER_NAME/rootfs"
@@ -55,8 +55,8 @@ function cleanup {
 	rm "$PIPE1" >/dev/null 2>&1
 	rm "$PIPE2" >/dev/null 2>&1
 }
-trap cleanup EXIT
-trap "ret=$?; cleanup; exit $ret" INT QUIT TERM HUP
+trap mount_teardown EXIT
+trap "ret=$?; mount_teardown; exit $ret" INT QUIT TERM HUP
 set -m # job control
 
 
@@ -416,8 +416,12 @@ eth_setup() {
 	ip addr add "$IP_A/$subnet_mask" dev "veth_$CONTAINER_NAME" # IP_A - IP_B
 	ip link set "veth_$CONTAINER_NAME" up
 
-	# iptables -P FORWARD DROP
+	local default_nic=$(route | grep '^default' | grep -o '[^ ]*$' | head -n1)
+	local default_subnet=$(ip addr show dev eth0 | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+')
+	iptables -P FORWARD DROP
 	iptables -t nat -A POSTROUTING -s "$IP_A/$subnet_mask" -o eth0 -j MASQUERADE # IP_A - IP_B
+	iptables -A INPUT -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP # prevent access to host subnet
+	iptables -A FORWARD -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP # prevent access to host subnet
 	iptables -A FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT
 	iptables -A FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT
 
@@ -445,6 +449,24 @@ eth_setup() {
 	echo "eth_setup() exit" >$p2 # signal main process that we are done
 }
 
+#############################################################
+# Remove network setup for sandbox.
+# Globals:
+#     IP_A         pair ip for host
+#     IP_B         pair ip for sandbox
+#############################################################
+eth_teardown() {
+	local default_nic=$(route | grep '^default' | grep -o '[^ ]*$' | head -n1)
+	local default_subnet=$(ip addr show dev eth0 | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+')
+	iptables -t nat -D POSTROUTING -s "$IP_A/30" -o eth0 -j MASQUERADE >/dev/null 2>&1
+	iptables -D INPUT -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP >/dev/null 2>&1
+	iptables -D FORWARD -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP >/dev/null 2>&1
+	iptables -D FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT >/dev/null 2>&1
+	iptables -D FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT >/dev/null 2>&1
+	ip link delete "veth_$CONTAINER_NAME" >/dev/null 2>&1
+}
+
+
 debootstrap_sandbox "$CONTAINER_NAME" # create work files
 PIPE1=$(mktemp -u) # for receiving namespace pid in task
 PIPE2=$(mktemp -u) # for receiving task finish signal
@@ -452,11 +474,10 @@ sudo -u $USER mkfifo $PIPE1 $PIPE2
 $VERBOSE && echo "eth_setup() start"
 (eth_setup $PIPE1 $PIPE2 &) # async
 
-
-# create new namespace
+# create new namespace (cont'd --cgroup)
 sudo -u $USER \
 unshare --mount --propagation slave \
-	--pid --uts --ipc --cgroup 	--net\
+	--pid --uts --ipc --net \
 	--kill-child $USER_NAMESPACE_CMD \
 	--fork \
 	bash -c """$(cat <<-EOF
@@ -498,13 +519,8 @@ unshare --mount --propagation slave \
 		EOF
 	)"""
 
-# clean up network
-iptables -t nat -D POSTROUTING -s "$IP_A/30" -o eth0 -j MASQUERADE >/dev/null 2>&1
-iptables -D FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT >/dev/null 2>&1
-iptables -D FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT >/dev/null 2>&1
-ip link delete "veth_$CONTAINER_NAME" >/dev/null 2>&1
-
-cleanup
+eth_teardown
+mount_teardown
 trap - EXIT INT QUIT TERM HUP # free traps
 
 #Save snapshot
