@@ -416,7 +416,7 @@ eth_setup() {
 	ip addr add "$IP_A/$subnet_mask" dev "veth_$CONTAINER_NAME" # IP_A - IP_B
 	ip link set "veth_$CONTAINER_NAME" up
 
-	iptables -P FORWARD DROP
+	# iptables -P FORWARD DROP
 	iptables -t nat -A POSTROUTING -s "$IP_A/$subnet_mask" -o eth0 -j MASQUERADE # IP_A - IP_B
 	iptables -A FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT
 	iptables -A FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT
