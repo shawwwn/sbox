@@ -64,6 +64,7 @@ sbox apt install curl
 sbox -r shawwwn bash
 ```
 
+--------------------------------------------
 #### OPTION:
 
 * **-n | --container-name NAME**
@@ -74,7 +75,7 @@ sbox -r shawwwn bash
     Several working directories will be created under `/tmp/sbox/NAME/`. \
     Default: 'default'
 
-* **-r | --user-root USER** 
+* **-u | --user-root USER** 
     
     Still need root to do initialization. \
     Once initialization is done, enter *user namespace* as user `USER`.\
@@ -96,7 +97,7 @@ sbox -r shawwwn bash
     Display help information.
 
 
-
+-------------------------------------------
 ## *sbox-fstool* usage: 
 
 Tool for commit, prune, merge files created in sandbox environment by sbox.
