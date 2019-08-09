@@ -498,11 +498,6 @@ unshare --mount --propagation slave \
 		EOF
 	)"""
 
-if [ $? -ne 0 ]; then
-	echo "Abort."
-	exit 1
-fi
-
 # clean up network
 iptables -t nat -D POSTROUTING -s "$IP_A/30" -o eth0 -j MASQUERADE >/dev/null 2>&1
 iptables -D FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT >/dev/null 2>&1
