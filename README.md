@@ -45,7 +45,7 @@ In addition, each sandbox have its own network stack(has internet access), mount
 It's more like a stripped down version of docker.
 
 
-
+------------------------------------
 ## *sbox* usage: 
 
 Run program in sandbox
@@ -60,11 +60,10 @@ e.g.,
 # run program in a privileged sandbox
 sbox apt install curl
 
-# run program in a un-privileged sandbox, with privileges of user 'shawwwn'
-sbox -r shawwwn bash
+# run program in sandbox as unprivileged user 'shawwwn'
+sbox -u shawwwn bash
 ```
 
---------------------------------------------
 #### OPTION:
 
 * **-n | --container-name NAME**
@@ -97,7 +96,7 @@ sbox -r shawwwn bash
     Display help information.
 
 
--------------------------------------------
+------------------------------------
 ## *sbox-fstool* usage: 
 
 Tool for commit, prune, merge files created in sandbox environment by sbox.
