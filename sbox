@@ -431,19 +431,19 @@ eth_setup() {
 	iptables -A FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT
 
 	# wait for sandbox pid
-	read unshare_pid <$p1
+	read PID <$p1
 	rm $p1 # rm $PIPE1
-	if [ ! -n "$unshare_pid" ] || [ ! "$unshare_pid" -eq "$unshare_pid" ] 2>/dev/null; then
+	if [ ! -n "$PID" ] || [ ! "$PID" -eq "$PID" ] 2>/dev/null; then
 		fail "Unable to get unshare pid when setting up network!"
 	fi
-	$VERBOSE && echo "sandbox pid: $unshare_pid"
+	$VERBOSE && echo "sandbox pid: $PID"
 
 	# write pid file
-	echo $unshare_pid > "/tmp$PREFIX_DIR/$CONTAINER_NAME/container.pid"
+	echo $PID > "/tmp$PREFIX_DIR/$CONTAINER_NAME/container.pid"
 
 	mkdir -p "/var/run/netns" >/dev/null 2>&1
 	touch "/var/run/netns/ns_$CONTAINER_NAME"
-	mount --bind "/proc/$unshare_pid/ns/net" "/var/run/netns/ns_$CONTAINER_NAME"
+	mount --bind "/proc/$PID/ns/net" "/var/run/netns/ns_$CONTAINER_NAME"
 	ip link set "veth0" netns "ns_$CONTAINER_NAME" # send veth0 to sandbox
 	ip netns exec "ns_$CONTAINER_NAME" ip addr add "$IP_B/$subnet_mask" dev "veth0" # IP_A - IP_B
 	ip netns exec "ns_$CONTAINER_NAME" ip link set "veth0" up
@@ -472,23 +472,38 @@ eth_teardown() {
 }
 
 #############################################################
-# Check if given sandbox/container is running.
+# Return container pid if running
 #############################################################
-is_running() {
+get_container_pid() {
 	local name="$1"
-	local pid=$(cat "/tmp$PREFIX_DIR/$CONTAINER_NAME/container.pid")
+	local pid=$(cat "/tmp$PREFIX_DIR/$name/container.pid")
 	if [ ! -z "$pid" ] && (ps -p "$pid" >/dev/null 2>&1); then
+		echo "$pid"
 		return 0
 	fi
 	return 1;
 }
 
-if is_running "$CONTAINER_NAME"; then
+
+
+
+KILLED=false
+PID=$(get_container_pid "$CONTAINER_NAME")
+if [ ! -z "$PID" ]; then
 	trap - EXIT INT QUIT TERM HUP # free traps
 	if $JOIN; then
 		echo "Joining container \"$CONTAINER_NAME\":"
-		# TODO: join
-		:
+		nsenter -a -t $PID --no-fork \
+		bash -c """$(cat <<-EOF
+			ppid=\$(cat /proc/self/status | grep ^PPid: | awk '{print \$2}')
+			cd "/tmp$PREFIX_DIR/$CONTAINER_NAME"
+			exec chroot rootfs \
+				sudo -u $USER \
+					bash -c 'cd ~; exec $@'
+			EOF
+		)"""
+		KILLED=$([ $? == 137 ])
+		$KILLED && kill -9 $$ # to fix shell's strange behavior when child process was killed(-9) and returned to shell
 		exit 0
 	else
 		echo -e "Container \"$CONTAINER_NAME\" is already running.\n\nUse flag \"--join\" if to join a running container." >&2
@@ -551,10 +566,12 @@ unshare --mount --propagation slave \
 		echo "Error: program shouldn't reach here." >&2
 		EOF
 	)"""
+KILLED=$([ $? == 137 ])
 
 eth_teardown
 mount_teardown
 trap - EXIT INT QUIT TERM HUP # free traps
+$KILLED && kill -9 $$ # to fix shell's strange behavior when child process was killed(-9) and returned to shell
 
 #Save snapshot
 pushd "/tmp$PREFIX_DIR/$CONTAINER_NAME" >/dev/null
