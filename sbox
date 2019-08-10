@@ -39,6 +39,9 @@ function help {
 	echo "		Default location is /tmp/sbox/<NAME>/snapshot."
 	echo "		You can specify the <DIR> to disk if you want to save generated files."
 	echo ""
+	echo "	-j, --join"
+	echo "		Join a running container."
+	echo ""
 	echo "	-v, --verbose"
 	echo "		Print more information."
 	echo ""
@@ -67,6 +70,7 @@ for arg in "$@"; do
 		"--container-name") set -- "$@" "-n" ;;
 		"--user-root")      set -- "$@" "-u" ;;
 		"--snapshot-dir")   set -- "$@" "-d" ;;
+		"--join")           set -- "$@" "-j" ;;
 		"--verbose")        set -- "$@" "-v" ;;
 		"--help")           set -- "$@" "-h" ;;
 		*)                  set -- "$@" "$arg"
@@ -75,13 +79,15 @@ done
 
 # process options
 VERBOSE=false
+JOIN=false
 OPTIND=1
-while getopts n:u:d:vh opt; do
+while getopts n:u:d:jvh opt; do
 	case $opt in
 		n)                  CONTAINER_NAME=$OPTARG ;;
 		u)                  USER_NAMESPACE_CMD="--user --map-root-user"
 		                    USER=$OPTARG ;;
 		d)                  SNAPSHOT_DIR=$OPTARG ;;
+		j)                  JOIN=true ;;
 		v)                  echo "verbose on"
 		                    VERBOSE=true ;;
 		h)                  help
@@ -94,7 +100,7 @@ shift $(expr $OPTIND - 1)
 
 # check root
 if [ $(id -u) -ne 0 ]; then
-	echo "need to run as root"
+	echo "need to be run as root"
 	exit 2
 fi
 
@@ -265,9 +271,6 @@ get_sys_subnets() {
 
 
 
-starts=() # global span set
-ends=() # global span set
-
 #############################################################
 # Perform union operation of the given span against a set of 
 # spans.
@@ -278,6 +281,8 @@ ends=() # global span set
 #     starts
 #     ends
 #############################################################
+starts=() # global span set
+ends=() # global span set
 spans_union() {
 	local s=$1
 	local e=$2
@@ -466,6 +471,34 @@ eth_teardown() {
 	ip link delete "veth_$CONTAINER_NAME" >/dev/null 2>&1
 }
 
+#############################################################
+# Check if given sandbox/container is running.
+#############################################################
+is_running() {
+	local name="$1"
+	local pid=$(cat "/tmp$PREFIX_DIR/$CONTAINER_NAME/container.pid")
+	if [ ! -z "$pid" ] && (ps -p "$pid" >/dev/null 2>&1); then
+		return 0
+	fi
+	return 1;
+}
+
+if is_running "$CONTAINER_NAME"; then
+	trap - EXIT INT QUIT TERM HUP # free traps
+	if $JOIN; then
+		echo "Joining container \"$CONTAINER_NAME\":"
+		# TODO: join
+		:
+		exit 0
+	else
+		echo -e "Container \"$CONTAINER_NAME\" is already running.\n\nUse flag \"--join\" if to join a running container." >&2
+		exit 2
+	fi
+elif $JOIN; then
+	trap - EXIT INT QUIT TERM HUP # free traps
+	echo -e "Joining container \"$CONTAINER_NAME\" failed.\n\nContainer is not running." >&2
+	exit 2
+fi
 
 debootstrap_sandbox "$CONTAINER_NAME" # create work files
 PIPE1=$(mktemp -u) # for receiving namespace pid in task
@@ -511,7 +544,7 @@ unshare --mount --propagation slave \
 			echo "as user \"\$USER\" (\$(id -u \$USER))"
 		fi
 
-		echo "Enter container \"$CONTAINER_NAME\": "
+		echo "Entering container \"$CONTAINER_NAME\": "
 
 		exec chroot rootfs \
 			bash -c 'cd ~; exec $@'
