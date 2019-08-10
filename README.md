@@ -62,6 +62,12 @@ sbox apt install curl
 
 # run program in sandbox as unprivileged user 'shawwwn'
 sbox -u shawwwn bash
+
+# run bash in sandbox named 'sandbox1'
+sbox -n sandbox1 bash
+
+# run htop in 'sandbox1', monitor processes in sandbox
+sbox -n sandbox1 -j htop
 ```
 
 #### OPTION:
@@ -84,8 +90,14 @@ sbox -u shawwwn bash
 
 * **-d | --snapshot-dir DIR** 
 
-    Path of the snapshot directory storing **commited** file system changes after a program exits from sandbox.\
+    Path of the snapshot directory storing **commited** file system changes after `PROGRAM` exits from sandbox.\
     Default: 'snapshot'    # relative path inside /tmp/sbox/NAME/
+    
+* **-j | --join**
+
+    *sbox*'s default policy forbids creating a sandbox when there is one running under the same name.
+    This flag allows *sbox* to send `PROGRAM` into in an existing sandbox environment.
+    Any program sent by this flag will be forcibly terminated(SIGKILL) when the main program exits.
     
 * **-v | --verbose**
 
