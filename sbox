@@ -502,7 +502,7 @@ if [ ! -z "$PID" ]; then
 					bash -c 'cd ~; exec $@'
 			EOF
 		)"""
-		KILLED=$([ $? == 137 ])
+		[ $? == 137 ] && KILLED=true
 		$KILLED && kill -9 $$ # to fix shell's strange behavior when child process was killed(-9) and returned to shell
 		exit 0
 	else
@@ -566,7 +566,7 @@ unshare --mount --propagation slave \
 		echo "Error: program shouldn't reach here." >&2
 		EOF
 	)"""
-KILLED=$([ $? == 137 ])
+[ $? == 137 ] && KILLED=true
 
 eth_teardown
 mount_teardown
