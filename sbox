@@ -18,7 +18,7 @@
 CONTAINER_NAME=default					# default container name
 SNAPSHOT_DIR="snapshot"					# default snapshot directory name
 
-USER_NAMESPACE_CMD=""
+MAP_USER_ROOT=""
 USER="root"
 PREFIX_DIR="/sbox"
 
@@ -84,7 +84,7 @@ OPTIND=1
 while getopts n:u:d:jvh opt; do
 	case $opt in
 		n)                  CONTAINER_NAME=$OPTARG ;;
-		u)                  USER_NAMESPACE_CMD="--user --map-root-user"
+		u)                  MAP_USER_ROOT="--map-root-user"
 		                    USER=$OPTARG ;;
 		d)                  SNAPSHOT_DIR=$OPTARG ;;
 		j)                  JOIN=true ;;
@@ -448,7 +448,7 @@ eth_setup() {
 	ip netns exec "ns_$CONTAINER_NAME" ip addr add "$IP_B/$subnet_mask" dev "veth0" # IP_A - IP_B
 	ip netns exec "ns_$CONTAINER_NAME" ip link set "veth0" up
 	ip netns exec "ns_$CONTAINER_NAME" ip link set lo up
-	ip netns exec "ns_$CONTAINER_NAME" ip route add default via "$IP_A" # route all traffic to go through veth
+	ip netns exec "ns_$CONTAINER_NAME" ip route add default via "$IP_A" # route all traffic to go through veth0
 	umount "/var/run/netns/ns_$CONTAINER_NAME"
 	rm "/var/run/netns/ns_$CONTAINER_NAME"
 	echo "eth_setup() exit" >$p2 # signal main process that we are done
@@ -482,6 +482,41 @@ get_container_pid() {
 		return 0
 	fi
 	return 1;
+}
+
+#############################################################
+# Generate kernel-supported namespace flags for unshare.
+# In case kernel doesn't support one or more namespaces 
+# requested by unshare.
+# Globals:
+#     MAP_USER_ROOT
+#############################################################
+gen_supported_ns_flags() {
+	local namespaces=($(ls /proc/self/ns))
+	local ns
+	local flags=""
+	for ns in "${namespaces[@]}"; do
+		case "$ns" in
+			cgroup)
+				flags="$flags --cgroup" ;;
+			ipc)
+				flags="$flags --ipc" ;;
+			mnt)
+				flags="$flags --mount --propagation slave" ;;
+			net)
+				flags="$flags --net" ;;
+			pid)
+				flags="$flags --pid" ;;
+			uts)
+				flags="$flags --uts" ;;
+			user)
+				[ ! -z "$MAP_USER_ROOT" ] && flags="$flags --user" ;;
+			*)
+				echo "Error: unsupported namespace $ns?" >&2
+				exit 1 ;;
+		esac
+	done
+	echo "$flags"
 }
 
 
@@ -523,11 +558,11 @@ $VERBOSE && echo "eth_setup() start"
 (eth_setup $PIPE1 $PIPE2 &) # async
 
 # create new namespace (cont'd --cgroup)
+NS_FLAGS="$(gen_supported_ns_flags)"
 sudo -u $USER \
-unshare --mount --propagation slave \
-	--pid --uts --ipc --net \
-	--kill-child $USER_NAMESPACE_CMD \
-	--fork \
+unshare --kill-child --fork \
+	$NS_FLAGS \
+	$MAP_USER_ROOT \
 	bash -c """$(cat <<-EOF
 		# send current shell pid to background task
 		cat /proc/self/status | grep ^PPid: | awk '{print \$2}' >$PIPE1
@@ -553,7 +588,7 @@ unshare --mount --propagation slave \
 		mount --bind \$(readlink -f /etc/resolv.conf) rootfs/etc/resolv.conf
 
 		# display extra info if enters user namespace
-		if [ ! -z "$USER_NAMESPACE_CMD" ]; then
+		if [ ! -z "$MAP_USER_ROOT" ]; then
 			user_inode=$(readlink /proc/self/ns/user | cut -c7-16) # user ns
 			echo "enter new user namespace \"\$user_inode\""
 			echo "as user \"\$USER\" (\$(id -u \$USER))"
