@@ -476,7 +476,7 @@ eth_teardown() {
 #############################################################
 get_container_pid() {
 	local name="$1"
-	local pid=$(cat "/tmp$PREFIX_DIR/$name/container.pid")
+	local pid=$(cat "/tmp$PREFIX_DIR/$name/container.pid" 2>/dev/null)
 	if [ ! -z "$pid" ] && (ps -p "$pid" >/dev/null 2>&1); then
 		echo "$pid"
 		return 0
