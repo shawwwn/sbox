@@ -44,6 +44,13 @@ In addition, each sandbox have its own network stack(has internet access), mount
 
 It's more like a stripped down version of docker.
 
+## Install:
+
+```bash
+# dependencies, make adjustments for package managers other than apt
+apt-get install iproute2 net-tools iptables bash grep diffutils findutils sudo ipcalc pcregrep tree attr
+make install # copy executeables to /usr/bin
+```
 
 ------------------------------------
 ## *sbox* usage: 
