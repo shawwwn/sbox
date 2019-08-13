@@ -185,3 +185,5 @@ Default: default
 - Can not map current user to arbitary user in sandbox. Mapping is no longer do-able using pure shell script because newer kernel doesn't allow updating uid_map/gid_map after 'execve'[(\*)](https://stackoverflow.com/questions/45972426/unshare-user-namespace-and-set-uid-mapping-with-newuidmap).
 
 - If `-r USER` is not set, sBox will not create custom *user namespace*, so all other namespaces will be children of the namespace the invoking process is in(e.g., shell's user namespace). Do not set this flag if custom *user namespace* breaks your program. On the other hand, if this flag is set, all other namespaces will be children to the newly created *user namespace*.
+
+- Running sandbox inside an existing sandbox will work for the first time; howerever, it will fail if you continue to launch sandbox in a "layer-two" sandbox with errors like 'overlayfs mount failed'. This is not a bug with **sbox** but a limitation(bug?) with OverlayFS[(\*)](https://github.com/rkt/rkt/issues/1537). Currently, OverlayFS can't mount on itself for more than two layers.
