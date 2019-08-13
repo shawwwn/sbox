@@ -258,8 +258,9 @@ get_sys_subnets() {
 	local flag_n
 	[ "$1" == "-n" ] && { flag_n="-n"; shift; }
 
-	ip addr show | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+' | \
+	ip addr show | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?' | \
 	while read -r line; do
+		[[ $line != */* ]] && line="$line/32"
 		local start=""
 		local end=""
 		local args=($flag_n $line)
