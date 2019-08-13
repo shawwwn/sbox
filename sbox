@@ -470,7 +470,7 @@ eth_setup() {
 	ip link set "veth_$CONTAINER_NAME" up
 
 	local default_nic=$(route | grep '^default' | grep -o '[^ ]*$' | head -n1)
-	local default_subnet=$(ip addr show dev eth0 | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+')
+	local default_subnet=$(ip addr show dev $default_nic | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+')
 	iptables -P FORWARD DROP
 	iptables -t nat -A POSTROUTING -s "$IP_B" -o eth0 -j MASQUERADE # {IP_A, IP_B}
 	iptables -A INPUT -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP # prevent access to host subnet
@@ -500,7 +500,7 @@ eth_setup() {
 eth_teardown() {
 	$VERBOSE && echo "tear down sandbox network setting"
 	local default_nic=$(route | grep '^default' | grep -o '[^ ]*$' | head -n1)
-	local default_subnet=$(ip addr show dev eth0 | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+')
+	local default_subnet=$(ip addr show dev $default_nic | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+')
 	iptables -t nat -D POSTROUTING -s "$IP_B" -o eth0 -j MASQUERADE >/dev/null 2>&1
 	iptables -D INPUT -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP >/dev/null 2>&1
 	iptables -D FORWARD -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP >/dev/null 2>&1
