@@ -452,8 +452,19 @@ eth_setup() {
 		exit 1
 	}
 
-	$VERBOSE && echo "setup pair interfaces: veth_$CONTAINER_NAME <--> veth0"
-	ip link add "veth_$CONTAINER_NAME" type veth peer name "veth0" # veth0 for sandbox
+	# wait for sandbox pid
+	local pid
+	read pid <$p1
+	rm $p1 # rm $PIPE1
+	if [ ! -n "$pid" ] || [ ! "$pid" -eq "$pid" ] 2>/dev/null; then
+		fail "Unable to get unshare pid when setting up network!"
+	fi
+	$VERBOSE && echo "sandbox pid: $pid"
+	echo $pid > "/tmp$PREFIX_DIR/$CONTAINER_NAME/container.pid" # write pid file
+
+	# setup network on host
+	$VERBOSE && echo "setup pair interfaces: [host]veth_$CONTAINER_NAME <--> [sandbox]veth0"
+	ip link add "veth_$CONTAINER_NAME" type veth peer name "veth0" netns "$pid" # veth0 for sandbox
 	[ $? -ne 0 ] && fail "Unable to create network interfaces!"
 	ip addr add "$IP_A" peer "$IP_B" dev "veth_$CONTAINER_NAME" # ppp: IP_A -> IP_B
 	ip link set "veth_$CONTAINER_NAME" up
@@ -467,21 +478,10 @@ eth_setup() {
 	iptables -A FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT
 	iptables -A FORWARD -o eth0 -i "veth_$CONTAINER_NAME" -j ACCEPT
 
-	# wait for sandbox pid
-	read PID <$p1
-	rm $p1 # rm $PIPE1
-	if [ ! -n "$PID" ] || [ ! "$PID" -eq "$PID" ] 2>/dev/null; then
-		fail "Unable to get unshare pid when setting up network!"
-	fi
-	$VERBOSE && echo "sandbox pid: $PID"
-
-	# write pid file
-	echo $PID > "/tmp$PREFIX_DIR/$CONTAINER_NAME/container.pid"
-
+	# setup network on sandbox
 	mkdir -p "/var/run/netns" >/dev/null 2>&1
 	touch "/var/run/netns/ns_$CONTAINER_NAME"
-	mount --bind "/proc/$PID/ns/net" "/var/run/netns/ns_$CONTAINER_NAME"
-	ip link set "veth0" netns "ns_$CONTAINER_NAME" # send veth0 to sandbox
+	mount --bind "/proc/$pid/ns/net" "/var/run/netns/ns_$CONTAINER_NAME"
 	ip netns exec "ns_$CONTAINER_NAME" ip addr add "$IP_B" peer "$IP_A" dev "veth0" # ppp: IP_B -> IP_A
 	ip netns exec "ns_$CONTAINER_NAME" ip link set "veth0" up
 	ip netns exec "ns_$CONTAINER_NAME" ip link set lo up
