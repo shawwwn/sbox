@@ -368,6 +368,8 @@ save_sys_subnets_as_spans() {
 #############################################################
 # Given a starting address and a subnet mask, return the 
 # ip address to the next available subnet.
+# Subnet starts from subnet lower bound determined by the 
+# subnet mask.
 #############################################################
 get_avail_subnet_from_sys() {
 	local start_ip="$1"
@@ -389,16 +391,57 @@ get_avail_subnet_from_sys() {
 	echo "$ip"
 }
 
+#############################################################
+# Given a starting address and size of the range(number of 
+# addresses), return the start ip address of the available 
+# range.
+#############################################################
+get_avail_ips_from_sys () {
+	local start_ip="$1" # start of the ip range
+	local n="$2" # size of the ip range
+
+	local ip_start_dec=$(ip2num "$start_ip")
+	local ip_end_dec
+	while [ $ip_start_dec -lt 4294967295 ]; do # 0xFFFFFFFF
+		ip_end_dec=$((ip_start_dec + n - 1))
+		ip_boundary_dec=$(spans_intersected $ip_start_dec $ip_end_dec)
+		if [ $? -eq 0 ]; then
+			# intersected, search again
+			ip_start_dec=$((ip_boundary_dec + 1))
+		else
+			# not intersected, output
+			echo $(num2ip "$ip_start_dec")
+			break
+		fi
+	done
+}
 
 #############################################################
-# Setup network for sandbox.
-# Currently using pair-interface but better options do exist.
+# Read in system network settings, get a pair of available
+# ip's set to global variables for further process.
 # Globals:
 #     IP_A         pair ip for host
 #     IP_B         pair ip for sandbox
 #############################################################
 IP_A="192.168.50.1" # default
 IP_B="192.168.50.2" # default
+eth_init() {
+	save_sys_subnets_as_spans # load current network setup
+
+	IP_A="$(get_avail_ips_from_sys "$IP_A" 2)"
+	IP_B="$(num2ip $(($(ip2num $IP_A) + 1)))"
+	$VERBOSE && echo "ppp: $IP_A <--> $IP_B"
+	echo "Assigning ip $IP_B for sandbox"
+}
+
+#############################################################
+# Setup network for sandbox.
+# Using pair-interface and point-to-point connection
+# Must run after invoking eth_init()
+# Globals:
+#     IP_A         pair ip for host
+#     IP_B         pair ip for sandbox
+#############################################################
 eth_setup() {
 	local p1=$1 # pipe1
 	local p2=$2 # pipe2
@@ -409,23 +452,16 @@ eth_setup() {
 		exit 1
 	}
 
-	save_sys_subnets_as_spans # load current network setup
-	local subnet_mask=30
-	local subnet_ip="$(get_avail_subnet_from_sys "$IP_A" $subnet_mask)" # start searching from default value
-	local subnet_ip_dec="$(ip2num $subnet_ip)" # ip to decimal number
-	IP_A="$(num2ip $((subnet_ip_dec + 1)))"
-	IP_B="$(num2ip $((subnet_ip_dec + 2)))"
-	echo "assigned ip $IP_B for sandbox"
-
+	$VERBOSE && echo "setup pair interfaces: veth_$CONTAINER_NAME <--> veth0"
 	ip link add "veth_$CONTAINER_NAME" type veth peer name "veth0" # veth0 for sandbox
 	[ $? -ne 0 ] && fail "Unable to create network interfaces!"
-	ip addr add "$IP_A/$subnet_mask" dev "veth_$CONTAINER_NAME" # IP_A - IP_B
+	ip addr add "$IP_A" peer "$IP_B" dev "veth_$CONTAINER_NAME" # ppp: IP_A -> IP_B
 	ip link set "veth_$CONTAINER_NAME" up
 
 	local default_nic=$(route | grep '^default' | grep -o '[^ ]*$' | head -n1)
 	local default_subnet=$(ip addr show dev eth0 | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+')
 	iptables -P FORWARD DROP
-	iptables -t nat -A POSTROUTING -s "$IP_A/$subnet_mask" -o eth0 -j MASQUERADE # IP_A - IP_B
+	iptables -t nat -A POSTROUTING -s "$IP_B" -o eth0 -j MASQUERADE # {IP_A, IP_B}
 	iptables -A INPUT -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP # prevent access to host subnet
 	iptables -A FORWARD -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP # prevent access to host subnet
 	iptables -A FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT
@@ -446,10 +482,10 @@ eth_setup() {
 	touch "/var/run/netns/ns_$CONTAINER_NAME"
 	mount --bind "/proc/$PID/ns/net" "/var/run/netns/ns_$CONTAINER_NAME"
 	ip link set "veth0" netns "ns_$CONTAINER_NAME" # send veth0 to sandbox
-	ip netns exec "ns_$CONTAINER_NAME" ip addr add "$IP_B/$subnet_mask" dev "veth0" # IP_A - IP_B
+	ip netns exec "ns_$CONTAINER_NAME" ip addr add "$IP_B" peer "$IP_A" dev "veth0" # ppp: IP_B -> IP_A
 	ip netns exec "ns_$CONTAINER_NAME" ip link set "veth0" up
 	ip netns exec "ns_$CONTAINER_NAME" ip link set lo up
-	ip netns exec "ns_$CONTAINER_NAME" ip route add default via "$IP_A" # route all traffic to go through veth0
+	ip netns exec "ns_$CONTAINER_NAME" ip route add default via "$IP_A" # route all traffic to go in veth0, out veth_$CONTAINER_NAME
 	umount "/var/run/netns/ns_$CONTAINER_NAME"
 	rm "/var/run/netns/ns_$CONTAINER_NAME"
 	echo "eth_setup() exit" >$p2 # signal main process that we are done
@@ -462,9 +498,10 @@ eth_setup() {
 #     IP_B         pair ip for sandbox
 #############################################################
 eth_teardown() {
+	$VERBOSE && echo "tear down sandbox network setting"
 	local default_nic=$(route | grep '^default' | grep -o '[^ ]*$' | head -n1)
 	local default_subnet=$(ip addr show dev eth0 | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+')
-	iptables -t nat -D POSTROUTING -s "$IP_A/30" -o eth0 -j MASQUERADE >/dev/null 2>&1
+	iptables -t nat -D POSTROUTING -s "$IP_B" -o eth0 -j MASQUERADE >/dev/null 2>&1
 	iptables -D INPUT -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP >/dev/null 2>&1
 	iptables -D FORWARD -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP >/dev/null 2>&1
 	iptables -D FORWARD -i eth0 -o "veth_$CONTAINER_NAME" -j ACCEPT >/dev/null 2>&1
@@ -527,6 +564,7 @@ KILLED=false
 PID=$(get_container_pid "$CONTAINER_NAME")
 if [ ! -z "$PID" ]; then
 	trap - EXIT INT QUIT TERM HUP # free traps
+	$VERBOSE && echo "running container pid: $PID"
 	if $JOIN; then
 		echo "Joining container \"$CONTAINER_NAME\":"
 		nsenter -a -t $PID --no-fork \
@@ -556,7 +594,8 @@ PIPE1=$(mktemp -u) # for receiving namespace pid in task
 PIPE2=$(mktemp -u) # for receiving task finish signal
 sudo -u $USER mkfifo $PIPE1 $PIPE2
 $VERBOSE && echo "eth_setup() start"
-(eth_setup $PIPE1 $PIPE2 &) # async
+eth_init
+eth_setup $PIPE1 $PIPE2 & # async
 
 # create new namespace (cont'd --cgroup)
 NS_FLAGS="$(gen_supported_ns_flags)"
