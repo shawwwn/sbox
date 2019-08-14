@@ -48,7 +48,7 @@ It's more like a stripped down version of docker.
 
 ```bash
 # dependencies, make adjustments for package managers other than apt
-apt-get install iproute2 net-tools iptables bash grep diffutils findutils sudo ipcalc pcregrep tree attr
+apt-get install iproute2 net-tools iptables bash grep diffutils findutils sudo ipcalc pcregrep tree attr libseccomp2 libseccomp-dev
 make install # copy executeables to /usr/bin
 ```
 
