@@ -1,6 +1,3 @@
-/* Sample builtin to be dynamically loaded with enable -f and create a new
-   builtin. */
-
 /*
    Copyright (C) 2019 Shawwwn <shawwwn1@gmail.com>
    GNU General Public License
