@@ -187,3 +187,17 @@ Default: default
 - If `-r USER` is not set, sBox will not create custom *user namespace*, so all other namespaces will be children of the namespace the invoking process is in(e.g., shell's user namespace). Do not set this flag if custom *user namespace* breaks your program. On the other hand, if this flag is set, all other namespaces will be children to the newly created *user namespace*.
 
 - Running sandbox inside an existing sandbox will work for the first time; howerever, it will fail if you continue to launch sandbox in a "layer-two" sandbox with errors like 'overlayfs mount failed'. This is not a bug with **sbox** but a limitation(bug?) with OverlayFS[(\*)](https://github.com/rkt/rkt/issues/1537). Currently, OverlayFS can't mount on itself for more than two layers.
+
+- `seccomp` is implemented in C as a bash builtin command(unfortunately there is no way to do this in pure bash). 
+
+    ```bash
+    # enable -f seccomp.so seccomp
+    # seccomp
+    seccomp: usage: seccomp [-a blacklist|whitelist] [-v] syscall_no1 syscall_no2 ...
+    ```
+
+    Default security(seccomp) profile will deny these syscalls once we are in sandbox[(\*)](https://docs.docker.com/engine/security/seccomp/):
+    
+    `acct, add_key, bpf, clock_adjtime, clock_settime, create_module, delete_module, finit_module, get_kernel_syms, get_mempolicy, init_module, ioperm, iopl, kcmp, kexec_file_load, kexec_load, keyctl, lookup_dcookie, mbind, move_pages, name_to_handle_at, nfsservctl, perf_event_open, pivot_root, process_vm_readv, process_vm_writev, ptrace, query_module, quotactl, reboot, request_key, set_mempolicy, settimeofday, stime, swapon, swapoff, sysfs, _sysctl, uselib, userfaultfd, ustat, vm86, vm86old`
+    
+    
