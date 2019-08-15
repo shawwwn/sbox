@@ -99,11 +99,18 @@ sbox -n sandbox1 -j htop
 
     Path of the snapshot directory storing **commited** file system changes after `PROGRAM` exits from sandbox.\
     Default: 'snapshot'    # relative path inside /tmp/sbox/NAME/
+
+* **-B | --seccomp-blacklist SYSCALLS**
+    
+    Deny syscall that are in list SYSCALLS inside sandbox via `seccomp`.\
+    List SYSCALLS has a format of `'syscall1,syscall2,syscall3'` (no space in between function names).\
+    Please refer to *Note* section for default syscall blacklist.
+
     
 * **-j | --join**
 
-    *sbox*'s default policy forbids creating a sandbox when there is one running under the same name.
-    This flag allows *sbox* to send `PROGRAM` into in an existing sandbox environment.
+    *sbox*'s default policy forbids creating a sandbox when there is one running under the same name.\
+    This flag allows *sbox* to send `PROGRAM` into in an existing sandbox environment.\
     Any program sent by this flag will be forcibly terminated(SIGKILL) when the main program exits.
     
 * **-v | --verbose**
