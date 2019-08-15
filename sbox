@@ -70,6 +70,31 @@ SYSCALL_DENYS=(
 	vm86old
 )
 
+CAP_DROPS="\
+CAP_DAC_READ_SEARCH,\
+CAP_IPC_LOCK,\
+CAP_IPC_OWNER,\
+CAP_LEASE,\
+CAP_LINUX_IMMUTABLE,\
+CAP_MAC_ADMIN,\
+CAP_MAC_OVERRIDE,\
+CAP_NET_BROADCAST,\
+CAP_AUDIT_CONTROL,\
+CAP_AUDIT_READ,\
+CAP_BLOCK_SUSPEND,\
+CAP_SYS_BOOT,\
+CAP_SYS_MODULE,\
+CAP_SYS_NICE,\
+CAP_SYS_PACCT,\
+CAP_SYS_PTRACE,\
+CAP_SYS_RAWIO,\
+CAP_SYS_RESOURCE,\
+CAP_SYS_TIME,\
+CAP_SYS_TTY_CONFIG,\
+CAP_SYSLOG,\
+CAP_WAKE_ALARM\
+"
+
 function help {
 	echo "usage: $0: [OPTION] PROGRAM"
 	echo "Run <PROGRAM> in a sandbox environment without writting to rootfs."
@@ -90,9 +115,14 @@ function help {
 	echo "		generated files."
 	echo ""
 	echo "	-B, --seccomp-blacklist SYSCALLS"
-	echo "		Deny syscall that are in list SYSCALLS inside sandbox."
+	echo "		Deny syscalls that are in list SYSCALLS inside sandbox."
 	echo "		List SYSCALLS has a format of 'syscall1,syscall2,syscall3' "
 	echo "		(no space in between function names)."
+	echo ""
+	echo "	-D, --cap-drop CAPS"
+	echo "		Drop capabilities that are in list CAPS inside sandbox."
+	echo "		List CAPS has a format of 'cap1,cap2,cap3' "
+	echo "		(no space in between cap names)."
 	echo ""
 	echo "	-j, --join"
 	echo "		Join a running sandbox."
@@ -127,6 +157,7 @@ for arg in "$@"; do
 		"--snapshot-dir")         set -- "$@" "-d" ;;
 		"--join")                 set -- "$@" "-j" ;;
 		"--seccomp-blacklist")    set -- "$@" "-B" ;;
+		"--cap-drop")             set -- "$@" "-D" ;;
 		"--verbose")              set -- "$@" "-v" ;;
 		"--help")                 set -- "$@" "-h" ;;
 		*)                        set -- "$@" "$arg"
@@ -138,7 +169,7 @@ VERBOSE=false
 JOIN=false
 OPTIND=1
 BLACKLIST=
-while getopts n:u:d:jB:vh opt; do
+while getopts n:u:d:jB:D:vh opt; do
 	case $opt in
 		n)                  CONTAINER_NAME=$OPTARG ;;
 		u)                  MAP_USER_ROOT="--map-root-user"
@@ -146,7 +177,9 @@ while getopts n:u:d:jB:vh opt; do
 		d)                  SNAPSHOT_DIR=$OPTARG ;;
 		j)                  JOIN=true ;;
 		B)                  IFS=',' read -a SYSCALL_DENYS <<< "$OPTARG"
-		                    IFS=', ' eval 'echo "deny syscall: ${SYSCALL_DENYS[*]}"' ;;
+		                    echo "deny syscalls: $OPTARG" ;;
+		D)                  CAP_DROPS="$(echo $OPTARG | awk '{print tolower($0)}')"
+		                    echo "drop capabilities: $CAP_DROPS" ;;
 		v)                  echo "verbose on"
 		                    VERBOSE=true ;;
 		h)                  help
@@ -737,9 +770,10 @@ unshare --kill-child --fork \
 		fi
 
 		echo "Entering container \"$CONTAINER_NAME\": "
+		$VERBOSE && echo "dropping capabilities ($(echo $CAP_DROPS | sed "s/,/ /g"))"
 
 		exec chroot rootfs \
-			bash -c '
+			capsh --drop="$CAP_DROPS" -- -c '
 				cd ~
 				enable -f seccomp.so seccomp
 				$VERBOSE && echo "blacklisting syscalls (${SYSCALL_DENYS[@]})"

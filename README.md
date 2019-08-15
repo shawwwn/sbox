@@ -102,10 +102,15 @@ sbox -n sandbox1 -j htop
 
 * **-B | --seccomp-blacklist SYSCALLS**
     
-    Deny syscall that are in list SYSCALLS inside sandbox via `seccomp`.\
+    Deny syscalls that are in list SYSCALLS inside sandbox via `seccomp`.\
     List SYSCALLS has a format of `'syscall1,syscall2,syscall3'` (no space in between function names).\
     Please refer to *Note* section for default syscall blacklist.
 
+* **-D | --cap-drop CAPS**
+    
+    Drop capabilities that are in list CAPS inside sandbox.\
+    List CAPS has a format of `'cap1,cap2,cap3'` (no space in between cap names).\
+    Please refer to *Note* section for default capability drop-list.
     
 * **-j | --join**
 
@@ -203,8 +208,10 @@ Default: default
     seccomp: usage: seccomp [-a blacklist|whitelist] [-v] syscall_no1 syscall_no2 ...
     ```
 
-    Default security(seccomp) profile will deny these syscalls once we are in sandbox[(\*)](https://docs.docker.com/engine/security/seccomp/):
+    Default security([seccomp](http://man7.org/linux/man-pages/man2/seccomp.2.html)) profile will deny these syscalls once we are in sandbox[(\*)](https://docs.docker.com/engine/security/seccomp/):
     
     `acct, add_key, bpf, clock_adjtime, clock_settime, create_module, delete_module, finit_module, get_kernel_syms, get_mempolicy, init_module, ioperm, iopl, kcmp, kexec_file_load, kexec_load, keyctl, lookup_dcookie, mbind, move_pages, name_to_handle_at, nfsservctl, perf_event_open, pivot_root, process_vm_readv, process_vm_writev, ptrace, query_module, quotactl, reboot, request_key, set_mempolicy, settimeofday, stime, swapon, swapoff, sysfs, _sysctl, uselib, userfaultfd, ustat, vm86, vm86old`
     
+- Default security([capabilities](http://man7.org/linux/man-pages/man7/capabilities.7.html)) profile includes dropping these unessential capabilities[(\*)](https://github.com/moby/moby/blob/master/oci/defaults.go#L14-L30):
     
+    `cap_dac_read_search, cap_ipc_lock, cap_ipc_owner, cap_lease, cap_linux_immutable, cap_mac_admin, cap_mac_override, cap_net_broadcast, cap_audit_control, cap_audit_read, cap_block_suspend, cap_sys_boot, cap_sys_module, cap_sys_nice, cap_sys_pacct, cap_sys_ptrace, cap_sys_rawio, cap_sys_resource, cap_sys_time, cap_sys_tty_config, cap_syslog, cap_wake_alarm`
