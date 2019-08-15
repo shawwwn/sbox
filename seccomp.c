@@ -1,4 +1,4 @@
-/* Bash4 builtin to be dynamically loaded with enable -f and create a new
+/* Sample builtin to be dynamically loaded with enable -f and create a new
    builtin. */
 
 /*
