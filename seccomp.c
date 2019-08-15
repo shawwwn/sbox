@@ -100,7 +100,6 @@ int seccomp_main (int argc, char **argv)
 		goto out;
 	}
 
-	printf("done\n");
 	return 0;
 
 out:

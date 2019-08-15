@@ -22,6 +22,54 @@ MAP_USER_ROOT=""
 USER="root"
 PREFIX_DIR="/sbox"
 
+# default seccomp profile
+# deny these syscalls once in sandbox
+SYSCALL_DENYS=(
+	acct
+	add_key
+	bpf
+	clock_adjtime
+	clock_settime
+	create_module
+	delete_module
+	finit_module
+	get_kernel_syms
+	get_mempolicy
+	init_module
+	ioperm
+	iopl
+	kcmp
+	kexec_file_load
+	kexec_load
+	keyctl
+	lookup_dcookie
+	mbind
+	move_pages
+	name_to_handle_at
+	nfsservctl
+	perf_event_open
+	pivot_root
+	process_vm_readv
+	process_vm_writev
+	ptrace
+	query_module
+	quotactl
+	reboot
+	request_key
+	set_mempolicy
+	settimeofday
+	stime
+	swapon
+	swapoff
+	sysfs
+	_sysctl
+	uselib
+	userfaultfd
+	ustat
+	vm86
+	vm86old
+)
+
 function help {
 	echo "usage: $0: [OPTION] PROGRAM"
 	echo "Run <PROGRAM> in a sandbox environment without writting to rootfs."
@@ -189,6 +237,46 @@ xxargs() {
 		ret=$((ret | $?))
 	done
 	return $ret
+}
+
+
+#############################################################
+# Converting a text syscall function name to 
+# architecture-based syscall reference number.
+#############################################################
+syscall2num() {
+	local fn="$1"
+
+	local num
+	local re="#define __NR_$fn\s+(\d+)"
+	case "$(uname -m)" in
+		x86-64)
+			num=$(cat /usr/include/asm/unistd_64.h | pcregrep -i -o1 -e "$re") ;;
+		i386)
+			num=$(cat /usr/include/asm/unistd_32.h | pcregrep -i -o1 -e "$re") ;;
+		x32)
+			num=$(cat /usr/include/asm/unistd_x32.h | pcregrep -i -o1 -e "#define __NR_$fn \(__X32_SYSCALL_BIT \+ (\d+)") ;;
+		arm*|aarch*)
+			num=$(cat /usr/include/asm-generic/unistd.h | pcregrep -i -o1 -e "$re") ;;
+		*)
+			echo "Unknown platform!" >&2 ;;
+	esac
+
+	# use method 2
+	[ -z "$num" ] && num=$(printf "#include <sys/syscall.h>\nSYS_$fn" | gcc -E -P - | tail -n1)
+	
+	if  [ -n "$num" ] && [ "$num" -eq "$num" ] 2>/dev/null; then
+		echo $num
+	fi
+}
+syscall2nums() {
+	local syscalls=("$@")
+	local syscall_nos=()
+	local fn
+	for fn in "${syscalls[@]}"; do
+		syscall_nos+=($(syscall2num $fn))
+	done
+	echo ${syscall_nos[@]}
 }
 
 
@@ -597,6 +685,9 @@ $VERBOSE && echo "eth_setup() start"
 eth_init
 eth_setup $PIPE1 $PIPE2 & # async
 
+# syscall name to kernel reference number
+SYSCALL_DENYS=($(syscall2nums "${SYSCALL_DENYS[@]}"))
+
 # create new namespace (cont'd --cgroup)
 NS_FLAGS="$(gen_supported_ns_flags)"
 sudo -u $USER \
@@ -637,7 +728,13 @@ unshare --kill-child --fork \
 		echo "Entering container \"$CONTAINER_NAME\": "
 
 		exec chroot rootfs \
-			bash -c 'cd ~; exec $@'
+			bash -c '
+				cd ~
+				enable -f seccomp.so seccomp
+				$VERBOSE && echo "blacklisting syscalls (${SYSCALL_DENYS[@]})"
+				seccomp -a blacklist ${SYSCALL_DENYS[@]}
+				exec $@
+			'
 		echo "Error: program shouldn't reach here." >&2
 		EOF
 	)"""
