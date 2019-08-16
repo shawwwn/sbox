@@ -78,9 +78,11 @@ int seccomp_main (int argc, char **argv)
 	// deny gaining new privileges from now on
 	// https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt
 	if (no_new_privs) {
-		if (prctl(PR_SET_NO_NEW_PRIVS, 1) != 0) {
+		if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
 			fprintf(stderr, "Set no_new_privs failed!\n");
+			return 1;
 		}
+		return 0;
 	}
 
 	// check if has positional arguments

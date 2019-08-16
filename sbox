@@ -19,6 +19,7 @@ CONTAINER_NAME=default					# default container name
 SNAPSHOT_DIR="snapshot"					# default snapshot directory name
 
 MAP_USER_ROOT=""
+NO_NEW_PRIVS=false
 USER="root"
 PREFIX_DIR="/sbox"
 
@@ -124,6 +125,10 @@ function help {
 	echo "		List CAPS has a format of 'cap1,cap2,cap3' "
 	echo "		(no space in between cap names)."
 	echo ""
+	echo "	-N, --no-new-privs"
+	echo "		Prevent sandboxed program from gaining new privileges."
+	echo "		https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt"
+	echo ""
 	echo "	-j, --join"
 	echo "		Join a running sandbox."
 	echo ""
@@ -156,6 +161,7 @@ for arg in "$@"; do
 		"--user-root")            set -- "$@" "-u" ;;
 		"--snapshot-dir")         set -- "$@" "-d" ;;
 		"--join")                 set -- "$@" "-j" ;;
+		"--no-new-privs")         set -- "$@" "-N" ;;
 		"--seccomp-blacklist")    set -- "$@" "-B" ;;
 		"--cap-drop")             set -- "$@" "-D" ;;
 		"--verbose")              set -- "$@" "-v" ;;
@@ -169,13 +175,14 @@ VERBOSE=false
 JOIN=false
 OPTIND=1
 BLACKLIST=
-while getopts n:u:d:jB:D:vh opt; do
+while getopts n:u:d:jNB:D:vh opt; do
 	case $opt in
 		n)                  CONTAINER_NAME=$OPTARG ;;
 		u)                  MAP_USER_ROOT="--map-root-user"
 		                    USER=$OPTARG ;;
 		d)                  SNAPSHOT_DIR=$OPTARG ;;
 		j)                  JOIN=true ;;
+		N)                  NO_NEW_PRIVS=true ;;
 		B)                  IFS=',' read -a SYSCALL_DENYS <<< "$OPTARG"
 		                    echo "deny syscalls: $OPTARG" ;;
 		D)                  CAP_DROPS="$(echo $OPTARG | awk '{print tolower($0)}')"
@@ -777,6 +784,7 @@ unshare --kill-child --fork \
 				cd ~
 				enable -f seccomp.so seccomp
 				$VERBOSE && echo "blacklisting syscalls (${SYSCALL_DENYS[@]})"
+				$NO_NEW_PRIVS && seccomp --no-new-privs
 				seccomp -a blacklist ${SYSCALL_DENYS[@]}
 				exec $@
 			'
