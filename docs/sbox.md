@@ -65,6 +65,11 @@ sbox --cap-drop "CAP_NET_RAW" bash
     List CAPS has a format of `'cap1,cap2,cap3'` (no space in between cap names).\
     Please refer to *Note* section for default capability drop-list.
     
+* **-N | --no-new-privs**
+
+    Prevent sandboxed program from gaining new privileges.
+    https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt
+    
 * **-j | --join**
 
     *sbox*'s default policy forbids creating a sandbox when there is one running under the same name.\
