@@ -3,17 +3,22 @@
    GNU General Public License
 */
 
+
 #include <unistd.h>
-#include <stdint.h>
 #include <stdbool.h> 
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
 
+#include <sys/prctl.h>
+#include <linux/seccomp.h>
 #include <seccomp.h>
 #include "builtins.h"
 #include "shell.h"
 #include "bashgetopt.h"
+
+#define OPTPARSE_IMPLEMENTATION
+#include "optparse.h"
 
 extern char **make_builtin_argv ();
 extern void builtin_usage __P((void));
@@ -32,15 +37,26 @@ bool isNumber(char *str)
 int seccomp_main (int argc, char **argv)
 {
 	unsigned int seccomp_action = SCMP_ACT_ERRNO(EPERM); // blacklist by default
+	bool no_new_privs = false;
 
-	// parse arguments
-	int c;
-	while ((c = getopt (argc, argv, "a:v")) != -1) {
-		switch (c) {
+	struct optparse_long longopts[] = {
+		{"no-new-privs", 'N', OPTPARSE_NONE},
+		{"action",       'a', OPTPARSE_REQUIRED},
+		{"version",      'v', OPTPARSE_NONE},
+		{0}
+	};
+	int option;
+	struct optparse options;
+	optparse_init(&options, argv);
+	while ((option = optparse_long(&options, longopts, NULL)) != -1) {
+		switch (option) {
+			case 'N':
+				no_new_privs = true;
+				break;
 			case 'a':
-				if (strcmp(optarg, "whitelist") == 0) {
+				if (strcmp(options.optarg, "whitelist") == 0) {
 					seccomp_action = SCMP_ACT_ALLOW;
-				} else if (strcmp(optarg, "blacklist") == 0) {
+				} else if (strcmp(options.optarg, "blacklist") == 0) {
 					seccomp_action = SCMP_ACT_ERRNO(EPERM);
 				} else {
 					builtin_usage();
@@ -59,19 +75,31 @@ int seccomp_main (int argc, char **argv)
 		}
 	}
 
-	// check argument format
-	for (int i=optind; i<argc; i++) {
-		char* arg = argv[i];
-		if (!isNumber(arg)) {
-			fprintf(stderr, "Invalid Argument \"%s\".\nAbort.\n", arg);
-			return EINVAL;
+	// deny gaining new privileges from now on
+	// https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt
+	if (no_new_privs) {
+		if (prctl(PR_SET_NO_NEW_PRIVS, 1) != 0) {
+			fprintf(stderr, "Set no_new_privs failed!\n");
 		}
 	}
 
-	if (optind >= argc) {
+	// check if has positional arguments
+	if (options.optind >= argc) {
+		fprintf(stderr, "No positional args!\n");
 		builtin_usage();
 		return EX_USAGE;
 	}
+
+	// check argument format
+	int optind = options.optind; // backup cursor
+	char *arg;
+	while ((arg = optparse_arg(&options))) {
+		if (!isNumber(arg)) {
+			fprintf(stderr, "Invalid Argument \"%s\"\n", arg);
+			return EINVAL;
+		}
+	}
+	options.optind = optind; // restore cursor
 
 	// filter syscall
 	int rc = -1;
@@ -84,8 +112,8 @@ int seccomp_main (int argc, char **argv)
 	if (ctx == NULL)
 		goto out;
 
-	for (int i=optind; i<argc; i++) {
-		int syscall_no = atoi(argv[i]);
+	while ((arg = optparse_arg(&options))) {
+		int syscall_no = atoi(arg);
 		rc = seccomp_rule_add(ctx, seccomp_action, syscall_no, 0);
 		if (rc < 0) 
 			fprintf(stderr, "Failed to add syscall %u to seccomp.\n", syscall_no);
@@ -134,6 +162,6 @@ struct builtin seccomp_struct = {
 	.function       = seccomp_builtin,
 	.flags          = BUILTIN_ENABLED,
 	.long_doc       = seccomp_doc,
-	.short_doc      = "seccomp [-a blacklist|whitelist] [-v] syscall_no1 syscall_no2 ...",
+	.short_doc      = "seccomp [-a blacklist|whitelist] [-v] [--no-new-privs] [--mode-strict] syscall_no1 syscall_no2 ...",
 	.handle         = NULL,
 };
