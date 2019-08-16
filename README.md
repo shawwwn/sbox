@@ -53,7 +53,7 @@ In addition, **sBox** is capable of doing the following:
 4. AppArmor Integration (profile per sandbox)
 5. SELinux Integration (TODO)
 
-The (default sercurity profile)[docs/sbox.md#note] of **sBox** can be somewhat aggressive, you may want to tone it down a bit if your program fails to run.
+The [default sercurity profile](docs/sbox.md#note) of **sBox** can be somewhat aggressive, you may want to tone it down a bit if your program fails to run.
 
 ## Installation:
 
