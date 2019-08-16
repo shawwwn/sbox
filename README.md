@@ -48,7 +48,7 @@ In additiona, each sandbox have its own/isolated:
     5. UTS (hostname)
     6. cgroup
 2. Seccomp (for blacklisting syscalls)
-3. Capabilities (access control)
+3. Capabilities (coarse privileges)
 
 It's like docker but doesn't come with any base image!
 
