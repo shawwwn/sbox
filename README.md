@@ -39,7 +39,8 @@ Abort.
 
 Programs run in **sBox** still have access to your rootfs except all modifications to file system will be cached. You may chose to merge these changes on exit.
 
-In additiona, each sandbox have its own/isolated:
+In addition, **sBox** is capable of doing the following:
+
 1. Namespaces
     1. Internet Access
     2. Mount Points
@@ -47,11 +48,12 @@ In additiona, each sandbox have its own/isolated:
     4. IPC (shared memory between processes)
     5. UTS (hostname)
     6. cgroup
-2. Seccomp (for blacklisting syscalls)
-3. Capabilities (coarse privileges)
+2. Seccomp Blacklist
+3. Capability Blacklist
+4. AppArmor Integration (profile per sandbox)
+5. SELinux Integration (TODO)
 
-It's like docker but doesn't come with any base image!
-
+The (default sercurity profile)[docs/sbox.md#note] of **sBox** can be somewhat aggressive, you may want to tone it down a bit if your program fails to run.
 
 ## Installation:
 
