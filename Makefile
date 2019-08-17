@@ -11,12 +11,16 @@ endif
 
 .PHONY: install uninstall all
 
-all: seccomp.so
+all: seccomp.so aa.so
 	@echo "run 'make install' or 'make uninstall'"
 
 seccomp.so: seccomp.c
 	@echo "CC $@"
 	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -lseccomp -shared seccomp.c -o seccomp.so
+
+aa.so: aa.c
+	@echo "CC $@"
+	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -shared aa.c -o aa.so
 
 install: seccomp.so $(PROGS)
 	$(Q)for prog in ${PROGS}; do \
