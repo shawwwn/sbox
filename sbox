@@ -129,6 +129,11 @@ function help {
 	echo "		Prevent sandboxed program from gaining new privileges."
 	echo "		https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt"
 	echo ""
+	echo "	-A --apparmor-profile PROFILE"
+	echo "		Apply AppArmor profile to sandboxed PROGRAM."
+	echo "		Kernel must support apparmor."
+	echo "		May need to install extra dependencies."
+	echo ""
 	echo "	-j, --join"
 	echo "		Join a running sandbox."
 	echo ""
@@ -164,6 +169,7 @@ for arg in "$@"; do
 		"--no-new-privs")         set -- "$@" "-N" ;;
 		"--seccomp-blacklist")    set -- "$@" "-B" ;;
 		"--cap-drop")             set -- "$@" "-D" ;;
+		"--apparmor-profile")     set -- "$@" "-A" ;;
 		"--verbose")              set -- "$@" "-v" ;;
 		"--help")                 set -- "$@" "-h" ;;
 		*)                        set -- "$@" "$arg"
@@ -175,7 +181,9 @@ VERBOSE=false
 JOIN=false
 OPTIND=1
 BLACKLIST=
-while getopts n:u:d:jNB:D:vh opt; do
+AA_PROFILE=
+AA_PROFILE_NEW=
+while getopts n:u:d:jNB:D:A:vh opt; do
 	case $opt in
 		n)                  CONTAINER_NAME=$OPTARG ;;
 		u)                  MAP_USER_ROOT="--map-root-user"
@@ -187,6 +195,7 @@ while getopts n:u:d:jNB:D:vh opt; do
 		                    echo "deny syscalls: $OPTARG" ;;
 		D)                  CAP_DROPS="$(echo $OPTARG | awk '{print tolower($0)}')"
 		                    echo "drop capabilities: $CAP_DROPS" ;;
+		A)                  AA_PROFILE="$OPTARG" ;;
 		v)                  echo "verbose on"
 		                    VERBOSE=true ;;
 		h)                  help
@@ -199,14 +208,52 @@ shift $(expr $OPTIND - 1)
 
 # check root
 if [ $(id -u) -ne 0 ]; then
-	echo "need to be run as root"
+	echo "need to be run as root" >&2
 	exit 2
 fi
 
 # check positional arguments
 if [ -z "$1" ]; then
-	echo "nothing to run!" && help && exit 2
+	echo "nothing to run!" >&2
+	help
+	exit 2
 fi
+
+#############################################################
+# Globals:
+#     AA_PROFILE
+#     AA_PROFILE_NEW
+#############################################################
+apparmor_setup() {
+	if [ ! -z "$AA_PROFILE" ]; then
+		if ! ls -d /sys/module/apparmor/ >/dev/null 2>&1; then
+			echo -e "Error: AppArmor module not found!\nNeed to install 'apparmor' package first." >&2
+			exit 1
+		elif ! which aa-enabled >/dev/null; then
+			echo "Error: Need to install 'apparmor-utils' package first." >&2
+		elif ! aa-enabled --quiet >/dev/null; then
+			echo "Error: AppArmor not enabled!" >&2
+			exit 1
+		fi
+
+		local profs_old=($(aa-status --pretty-json | jq -r '.profiles | to_entries[] | .key')) # profiles loaded in kernel
+		AA_PROFILE_NEW=($(apparmor_parser -N "$AA_PROFILE" | grep -v ${profs_old[@]/#/-e })) # profiles in file that are not already loaded in kernel
+		apparmor_parser -a "$AA_PROFILE" >/dev/null 2>&1 # load profile file
+		AA_PROFILE=($(apparmor_parser -N "$AA_PROFILE")) # save profile name(s)
+		echo "apparmor profile loaded: (${AA_PROFILE[@]})"
+	fi
+}
+apparmor_teardown() {
+	local prof
+	if [ ! -z "$AA_PROFILE_NEW" ]; then
+		for prof in "${AA_PROFILE_NEW[@]}"; do
+			$VERBOSE && echo "unload apparmor profile: $prof"
+			apparmor_parser -R "$prof" >/dev/null 2>&1
+		done
+	fi
+	unset AA_PROFILE_NEW
+}
+apparmor_setup
 
 
 #############################################################
@@ -782,10 +829,19 @@ unshare --kill-child --fork \
 		exec chroot rootfs \
 			capsh --drop="$CAP_DROPS" -- -c '
 				cd ~
+				
 				enable -f seccomp.so seccomp
 				$VERBOSE && echo "blacklisting syscalls (${SYSCALL_DENYS[@]})"
 				$NO_NEW_PRIVS && seccomp --no-new-privs
 				seccomp -a blacklist ${SYSCALL_DENYS[@]}
+
+				$VERBOSE && echo "applying apparmor profiles (${AA_PROFILE[@]})"
+				profs=(${AA_PROFILE[@]})
+				for prof in "\${profs[@]}"; do
+					# TODO: aa_change_profile()
+					$? && $VERBOSE && echo "profile applied: \$prof"
+				done
+
 				exec $@
 			'
 		echo "Error: program shouldn't reach here." >&2
@@ -793,6 +849,7 @@ unshare --kill-child --fork \
 	)"""
 [ $? == 137 ] && KILLED=true
 
+apparmor_teardown
 eth_teardown
 mount_teardown
 trap - EXIT INT QUIT TERM HUP # free traps
