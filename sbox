@@ -237,19 +237,25 @@ apparmor_setup() {
 		fi
 
 		local profs_old=($(aa-status --pretty-json | jq -r '.profiles | to_entries[] | .key')) # profiles loaded in kernel
-		AA_PROFILE_NEW=($(apparmor_parser -N "$AA_PROFILE" | grep -v ${profs_old[@]/#/-e })) # profiles in file that are not already loaded in kernel
+		local profs_new=$(apparmor_parser -N "$AA_PROFILE")
+		echo "apparmor profile: (${AA_PROFILE[@]})"
+		if [ -z $profs_old ]; then
+			AA_PROFILE_NEW=($profs_new)
+		else
+			AA_PROFILE_NEW=($(echo "$profs_new" | grep -v ${profs_old[@]/#/-e })) # excludes olds from news
+		fi
 		apparmor_parser -a "$AA_PROFILE" >/dev/null 2>&1 # load profile file
-		AA_PROFILE=($(apparmor_parser -N "$AA_PROFILE")) # save profile name(s)
-		echo "apparmor profile loaded: (${AA_PROFILE[@]})"
+		AA_PROFILE=($profs_new) # store profile name(s) instead of profile file
+		$VERBOSE && echo "apparmor profile loaded: (${AA_PROFILE[@]})"
 	fi
 }
 apparmor_teardown() {
+	enable -f aa.so aa_remove_profile
+	$VERBOSE && echo "reset apparmor"
 	local prof
-	if [ ! -z "$AA_PROFILE_NEW" ]; then
-		for prof in "${AA_PROFILE_NEW[@]}"; do
-			$VERBOSE && echo "unload apparmor profile: $prof"
-			apparmor_parser -R "$prof" >/dev/null 2>&1
-		done
+	if [ ! -z "${AA_PROFILE_NEW[@]}" ]; then
+		$VERBOSE && echo "unload apparmor profile: ${AA_PROFILE_NEW[@]}"
+		aa_remove_profile ${AA_PROFILE_NEW[@]}
 	fi
 	unset AA_PROFILE_NEW
 }
@@ -684,7 +690,7 @@ eth_setup() {
 #     IP_B         pair ip for sandbox
 #############################################################
 eth_teardown() {
-	$VERBOSE && echo "tear down sandbox network setting"
+	$VERBOSE && echo "teardown network"
 	local default_nic=$(route | grep '^default' | grep -o '[^ ]*$' | head -n1)
 	local default_subnet=$(ip addr show dev $default_nic | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+')
 	iptables -t nat -D POSTROUTING -s "$IP_B" -o "$default_nic" -j MASQUERADE >/dev/null 2>&1
@@ -836,10 +842,11 @@ unshare --kill-child --fork \
 				seccomp -a blacklist ${SYSCALL_DENYS[@]}
 
 				$VERBOSE && echo "applying apparmor profiles (${AA_PROFILE[@]})"
+				enable -f aa.so aa_change_profile
 				profs=(${AA_PROFILE[@]})
 				for prof in "\${profs[@]}"; do
-					# TODO: aa_change_profile()
-					$? && $VERBOSE && echo "profile applied: \$prof"
+					aa_change_profile "\$prof"
+					[ \$? -eq 0 ] && $VERBOSE && echo "profile applied: \$prof"
 				done
 
 				exec $@

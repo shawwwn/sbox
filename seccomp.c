@@ -16,12 +16,10 @@
 #include "builtins.h"
 #include "shell.h"
 #include "bashgetopt.h"
+#include "common.h"
 
 #define OPTPARSE_IMPLEMENTATION
 #include "optparse.h"
-
-extern char **make_builtin_argv ();
-extern void builtin_usage __P((void));
 
 bool isNumber(char *str)
 {
@@ -43,6 +41,7 @@ int seccomp_main (int argc, char **argv)
 		{"no-new-privs", 'N', OPTPARSE_NONE},
 		{"action",       'a', OPTPARSE_REQUIRED},
 		{"version",      'v', OPTPARSE_NONE},
+		{"help",         'h', OPTPARSE_NONE},
 		{0}
 	};
 	int option;
@@ -68,10 +67,12 @@ int seccomp_main (int argc, char **argv)
 				return 0;
 				break;
 			case '?':
-			default:
 				builtin_usage();
 				return EX_USAGE;
-				break;
+			case 'h':
+			default:
+				builtin_help();
+				return EX_USAGE;
 		}
 	}
 
@@ -147,11 +148,12 @@ int seccomp_builtin(WORD_LIST *list)
 }
 
 char *seccomp_doc[] = {
+	"",
 	"Block syscall using seccomp.",
-	"\n",
+	"",
 	"e.g.,",
 	"seccomp -a blacklist 160 # deny calls to uname() for aarch64 platform"
-	"\n",
+	"",
 	"Each syscall is represented by a reference number.",
 	"Reference numbers are different under different architectures.",
 	"Find the correct reference number in:",

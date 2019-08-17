@@ -76,7 +76,7 @@ sbox --cap-drop "CAP_NET_RAW" bash
     Kernel must support apparmor.\
     May need to install extra dependencies.\
     ```sh
-    apt install apparmor apparmor-utils
+    apt install apparmor apparmor-utils libapparmor-dev
     ```
     
 * **-j | --join**

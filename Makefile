@@ -20,9 +20,9 @@ seccomp.so: seccomp.c
 
 aa.so: aa.c
 	@echo "CC $@"
-	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -shared aa.c -o aa.so
+	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -lapparmor -shared aa.c -o aa.so
 
-install: seccomp.so $(PROGS)
+install: seccomp.so aa.so $(PROGS)
 	$(Q)for prog in ${PROGS}; do \
 		path=${BIN_DIR}/$$prog; \
 		echo "CP $$prog $$path"; \
@@ -31,7 +31,11 @@ install: seccomp.so $(PROGS)
 
 	@path=${LIB_DIR}/seccomp.so; \
 	echo "CP seccomp.so $$path"; \
-	cp seccomp.so $$path;
+	cp seccomp.so $$path; \
+
+	@path=${LIB_DIR}/aa.so; \
+	echo "CP aa.so $$path"; \
+	cp aa.so $$path; \
 
 uninstall:
 	$(Q)for prog in ${PROGS}; do \
