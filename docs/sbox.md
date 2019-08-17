@@ -69,6 +69,15 @@ sbox --cap-drop "CAP_NET_RAW" bash
 
     Prevent sandboxed program from gaining new privileges.
     https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt
+
+* **-A --apparmor-profile PROFILE**
+
+    Apply AppArmor profile to sandboxed PROGRAM.\
+    Kernel must support apparmor.\
+    May need to install extra dependencies.\
+    ```sh
+    apt install apparmor apparmor-utils
+    ```
     
 * **-j | --join**
 
