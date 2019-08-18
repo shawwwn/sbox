@@ -166,6 +166,6 @@ struct builtin seccomp_struct = {
 	.function       = seccomp_builtin,
 	.flags          = BUILTIN_ENABLED,
 	.long_doc       = seccomp_doc,
-	.short_doc      = "seccomp [-a blacklist|whitelist] [-v] [--no-new-privs] [--mode-strict] syscall_no1 syscall_no2 ...",
+	.short_doc      = "seccomp [-a blacklist|whitelist] [-v] [--no-new-privs] syscall_no1 syscall_no2 ...",
 	.handle         = NULL,
 };
