@@ -43,17 +43,16 @@ Programs run in **sBox** still have access to your rootfs except all modificatio
 
 In addition, **sBox** is capable of doing the following:
 
-1. Namespaces
-    1. Internet Access
-    2. Mount Points
-    3. PID (process view)
-    4. IPC (shared memory between processes)
-    5. UTS (hostname)
-    6. cgroup
-2. Seccomp Blacklist
-3. Capability Blacklist
-4. AppArmor Integration (profile per sandbox)
-5. SELinux Integration (TODO)
+- [x] Namespaces
+    - [x] Internet Access
+    - [x] Mount Points
+    - [x] PID (process view)
+    - [x] IPC (shared memory between processes)
+    - [x] UTS (hostname)
+    - [x] cgroup
+- [x] Seccomp Blacklist
+- [x] Capability Blacklist
+- [x] AppArmor Integration (profile per sandbox)
 
 The [default sercurity profile](docs/sbox.md#note) of **sBox** can be somewhat aggressive, you may want to tone it down a bit if your program fails to run.
 
