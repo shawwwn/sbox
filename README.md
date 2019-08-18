@@ -2,6 +2,8 @@
 
 Run programs in a sandbox environment without writting to rootfs.
 
+<img src="https://user-images.githubusercontent.com/4016736/63220940-4de16780-c146-11e9-84ee-e643a0f9e83d.png" width="250" height="250" />
+
 ```bash
 # sbox bash
 Create new container "default" with snapshot at /tmp/sbox/default/snapshot
