@@ -250,7 +250,7 @@ apparmor_setup() {
 	fi
 }
 apparmor_teardown() {
-	enable -f aa.so aa_remove_profile
+	enable -f sbox-aa.so aa_remove_profile
 	$VERBOSE && echo "reset apparmor"
 	local prof
 	if [ ! -z "${AA_PROFILE_NEW[@]}" ]; then
@@ -836,13 +836,13 @@ unshare --kill-child --fork \
 			capsh --drop="$CAP_DROPS" -- -c '
 				cd ~
 				
-				enable -f seccomp.so seccomp
+				enable -f sbox-seccomp.so seccomp
 				$VERBOSE && echo "blacklisting syscalls (${SYSCALL_DENYS[@]})"
 				$NO_NEW_PRIVS && seccomp --no-new-privs
 				seccomp -a blacklist ${SYSCALL_DENYS[@]}
 
 				$VERBOSE && echo "applying apparmor profiles (${AA_PROFILE[@]})"
-				enable -f aa.so aa_change_profile
+				enable -f sbox-aa.so aa_change_profile
 				profs=(${AA_PROFILE[@]})
 				for prof in "\${profs[@]}"; do
 					aa_change_profile "\$prof"
