@@ -50,11 +50,11 @@ In addition, **sBox** is capable of doing the following:
     - [x] IPC (shared memory between processes)
     - [x] UTS (hostname)
     - [x] cgroup
-- [x] Seccomp Blacklist
+- [x] Seccomp(syscall) Blacklist
 - [x] Capability Blacklist
 - [x] AppArmor Integration (profile per sandbox)
 
-The [default sercurity profile](docs/sbox.md#note) of **sBox** can be somewhat aggressive, you may want to tone it down a bit if your program fails to run.
+The [default sercurity profile](docs/sbox.md#note) of **sBox** can be a bit aggressive, you may want to tone it down if your program fails to run.
 
 ## Installation:
 
@@ -69,4 +69,5 @@ make install # copy executeables to /usr/bin
 
 * [sbox](docs/sbox.md)
 * [sbox-fstool](docs/sbox-fstool.md)
-* [seccomp.so](docs/seccomp.so.md)
+* [sbox-seccomp.so](docs/sbox-seccomp.so.md)
+* [sbox-aa.so](docs/sbox-aa.so.md)
