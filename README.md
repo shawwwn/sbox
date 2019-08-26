@@ -49,7 +49,8 @@ In addition, **sBox** is capable of doing the following:
     - [x] PID (process view)
     - [x] IPC (shared memory between processes)
     - [x] UTS (hostname)
-    - [x] cgroup
+    - [x] CGroup
+- [x] CGroup Integration (cgroup controllers on sandbox main process)
 - [x] Seccomp(syscall) Blacklist
 - [x] Capability Blacklist
 - [x] AppArmor Integration (profile per sandbox)
@@ -60,7 +61,7 @@ The [default sercurity profile](docs/sbox.md#note) of **sBox** can be a bit aggr
 
 ```bash
 # dependencies, make adjustments for package managers other than apt
-apt-get install iproute2 net-tools iptables bash grep diffutils findutils sudo ipcalc pcregrep tree attr libseccomp2 libseccomp-dev
+apt-get install iproute2 net-tools iptables bash grep diffutils findutils sudo ipcalc pcregrep tree attr libseccomp2 libseccomp-dev cgroup-tools
 make install # copy executeables to /usr/bin
 ```
 

@@ -134,6 +134,9 @@ function help {
 	echo "		Kernel must support apparmor."
 	echo "		May need to install extra dependencies."
 	echo ""
+	echo "	-g, --cgroup CONTROLLERS:PATH"
+	echo "		Add sandbox's main process to control group(s)."
+	echo ""
 	echo "	-j, --join"
 	echo "		Join a running sandbox."
 	echo ""
@@ -166,6 +169,7 @@ for arg in "$@"; do
 		"--user-root")            set -- "$@" "-u" ;;
 		"--snapshot-dir")         set -- "$@" "-d" ;;
 		"--join")                 set -- "$@" "-j" ;;
+		"--cgroup")               set -- "$@" "-g" ;;
 		"--no-new-privs")         set -- "$@" "-N" ;;
 		"--seccomp-blacklist")    set -- "$@" "-B" ;;
 		"--cap-drop")             set -- "$@" "-D" ;;
@@ -183,13 +187,15 @@ OPTIND=1
 BLACKLIST=
 AA_PROFILE=
 AA_PROFILE_NEW=
-while getopts n:u:d:jNB:D:A:vh opt; do
+CGROUPS=
+while getopts n:u:d:jg:NB:D:A:vh opt; do
 	case $opt in
 		n)                  CONTAINER_NAME=$OPTARG ;;
 		u)                  MAP_USER_ROOT="--map-root-user"
 		                    USER=$OPTARG ;;
 		d)                  SNAPSHOT_DIR=$OPTARG ;;
 		j)                  JOIN=true ;;
+		g)                  CGROUPS="$CGROUPS$OPTARG|" ;;
 		N)                  NO_NEW_PRIVS=true ;;
 		B)                  IFS=',' read -a SYSCALL_DENYS <<< "$OPTARG"
 		                    echo "deny syscalls: $OPTARG" ;;
@@ -218,6 +224,14 @@ if [ -z "$1" ]; then
 	help
 	exit 2
 fi
+
+# check if cgroup is not enabled
+if [ ! -z "$CGROUPS" ] && [ -z "$(grep '\<cgroup\>' /proc/filesystems)" ]; then
+	echo "cgroup is not enabled!" >&2
+	exit 1
+fi
+
+
 
 #############################################################
 # Globals:
@@ -609,6 +623,20 @@ get_avail_ips_from_sys () {
 }
 
 #############################################################
+# Apply cgroup(s) to pid.
+#############################################################
+cgroup_apply() {
+	local pid=$1
+	local cgs=$2
+
+	local cmd
+	IFS='|' read -ra cmd <<< "$cgs"
+	cmd="$(echo ${cmd[@]/#/-g })" # "-g cpuset:bb -g memory:cc"
+	cgclassify --sticky $cmd $pid
+	return $?
+}
+
+#############################################################
 # Read in system network settings, get a pair of available
 # ip's set to global variables for further process.
 # Globals:
@@ -653,6 +681,9 @@ eth_setup() {
 	fi
 	$VERBOSE && echo "sandbox pid: $pid"
 	echo $pid > "/tmp$PREFIX_DIR/$CONTAINER_NAME/container.pid" # write pid file
+
+	# apply cgroup to sandbox
+	[ ! -z "$CGROUPS" ] && cgroup_apply "$pid" "$CGROUPS"
 
 	# setup network on host
 	$VERBOSE && echo "setup pair interfaces: [host]veth_$CONTAINER_NAME <--> [sandbox]veth0"

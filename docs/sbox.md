@@ -28,6 +28,9 @@ sbox --seccomp-blacklist "uname,nanosleep" bash
 # drop capability CAP_NET_RAW in sandbox
 # you will not be able to 'ping' inside sandbox
 sbox --cap-drop "CAP_NET_RAW" bash
+
+# Apply sandbox process with cgroup controller 'cpuset,memory:foo' and 'cpu:boo'
+sbox -g cpuset,memory:foo -g cpu:boo bash
 ```
 
 ### OPTION:
@@ -39,7 +42,7 @@ sbox --cap-drop "CAP_NET_RAW" bash
     A environment is basically a overlay filesystem on top your existing rootfs.\
     Several working directories will be created under `/tmp/sbox/NAME/`. \
     Default: 'default'
-
+    
 * **-u | --user-root USER** 
     
     Still need root to do initialization. \
@@ -47,18 +50,18 @@ sbox --cap-drop "CAP_NET_RAW" bash
     Finally, map `USER`'s uid to root inside sandbox.\
     Program(s) run inside our sandbox will appear to be running as root but in fact only has `USER`'s privilege.\
     Default: 'root'
-
+    
 * **-d | --snapshot-dir DIR** 
-
+    
     Path of the snapshot directory storing **commited** file system changes after `PROGRAM` exits from sandbox.\
     Default: 'snapshot'    # relative path inside /tmp/sbox/NAME/
-
+    
 * **-B | --seccomp-blacklist SYSCALLS**
     
     Deny syscalls that are in list SYSCALLS inside sandbox via `seccomp`.\
     List SYSCALLS has a format of `'syscall1,syscall2,syscall3'` (no space in between function names).\
     Please refer to *Note* section for default syscall blacklist.
-
+    
 * **-D | --cap-drop CAPS**
     
     Drop capabilities that are in list CAPS inside sandbox.\
@@ -69,9 +72,9 @@ sbox --cap-drop "CAP_NET_RAW" bash
 
     Prevent sandboxed program from gaining new privileges.
     https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt
-
+    
 * **-A --apparmor-profile PROFILE**
-
+    
     Apply AppArmor profile to sandboxed PROGRAM.\
     Kernel must support apparmor.\
     May need to install extra dependencies.\
@@ -79,18 +82,23 @@ sbox --cap-drop "CAP_NET_RAW" bash
     apt install apparmor apparmor-utils libapparmor-dev
     ```
     
+* **-g | --cgroup CONTROLLERS:PATH**
+    
+    Add sandbox's main process(i.e., pid 1 inside sandbox environment) to control group(s).\
+    CONTROLLERS is a list of controllers and PATH is the relative path to control groups in the given controllers list.
+    
 * **-j | --join**
-
+    
     *sbox*'s default policy forbids creating a sandbox when there is one running under the same name.\
     This flag allows *sbox* to send `PROGRAM` into in an existing sandbox environment.\
     Any program sent by this flag will be forcibly terminated(SIGKILL) when the main program exits.
     
 * **-v | --verbose**
-
+    
     Print more information.
     
 * **-h | --help**
-
+    
     Display help information.
 
 
