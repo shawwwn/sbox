@@ -307,6 +307,7 @@ debootstrap_sandbox() {
 	mkdir "/tmp$PREFIX_DIR" >/dev/null 2>&1
 	pushd "/tmp$PREFIX_DIR" >/dev/null
 
+	mkdir -p "$name" >/dev/null 2>&1
 	pushd "$name" >/dev/null
 	SNAPSHOT_DIR=$(realpath -m "$SNAPSHOT_DIR") # to abs path
 	popd >/dev/null
