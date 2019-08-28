@@ -307,7 +307,9 @@ debootstrap_sandbox() {
 	mkdir "/tmp$PREFIX_DIR" >/dev/null 2>&1
 	pushd "/tmp$PREFIX_DIR" >/dev/null
 
-	SNAPSHOT_DIR=$(realpath -m "$name/$SNAPSHOT_DIR") # to abs path
+	pushd "$name" >/dev/null
+	SNAPSHOT_DIR=$(realpath -m "$SNAPSHOT_DIR") # to abs path
+	popd >/dev/null
 	[ ! -d "$name" ] && echo "Create new container \"$CONTAINER_NAME\" with snapshot at $SNAPSHOT_DIR"
 
 	# create/load rootfs
