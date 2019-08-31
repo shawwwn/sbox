@@ -697,7 +697,7 @@ eth_setup() {
 
 	local default_nic=$(route | grep '^default' | grep -o '[^ ]*$' | head -n1)
 	local default_subnet=$(ip addr show dev $default_nic | pcregrep -io -e '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+')
-	iptables -P FORWARD DROP
+	#iptables -P FORWARD DROP
 	iptables -t nat -A POSTROUTING -s "$IP_B" -o "$default_nic" -j MASQUERADE # {IP_A, IP_B}
 	iptables -A INPUT -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP # prevent access to host subnet
 	iptables -A FORWARD -i "veth_$CONTAINER_NAME" -d "$default_subnet" -j DROP # prevent access to host subnet
