@@ -142,6 +142,9 @@ same_content() {
 commit_all() {
 	local path_dirty="$1"
 	local path_snapshot="$2"
+	local snapshot
+	local opaque
+	local deleted
 
 	# directory doesn't exist or is empty
 	if [ ! -d "$path_dirty" ] || [ -z "$(ls -A $path_dirty)" ]; then
@@ -164,6 +167,14 @@ commit_all() {
 	done < <(getfattr --dump --match="trusted.overlay.opaque" \
 					--absolute-names --physical --recursive \
 					"$path_dirty")
+
+	# remove deleted files/directories
+	find "$path_dirty" -type c -perm 0 | while IFS=$'\n' read -r deleted; do
+		path_relative=$(echo "$deleted" | cut -c$((path_wc+1))-)
+		snapshot=$(realpath -esq "$path_snapshot$path_relative")
+		$VERBOSE && echo "remove deleted: $snapshot"
+		rm -r "$snapshot"
+	done
 
 	# move directory
 	$VERBOSE && echo "move dir: $path_dirty -> $path_snapshot"
