@@ -1,5 +1,4 @@
 PROGS = sbox sbox-fstool
-SHARED_OBJS = sbox-seccomp.so sbox-aa.so sbox-io.so
 BIN_DIR = /usr/bin
 LIB_DIR = /usr/lib
 CC = gcc
@@ -12,7 +11,7 @@ endif
 
 .PHONY: install uninstall all
 
-all: $(SHARED_OBJS)
+all: sbox-seccomp.so sbox-aa.so
 	@echo "run 'make install' or 'make uninstall'"
 
 sbox-seccomp.so: sbox-seccomp.c
@@ -23,35 +22,31 @@ sbox-aa.so: sbox-aa.c
 	@echo "CC $@"
 	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -lapparmor -shared sbox-aa.c -o sbox-aa.so
 
-sbox-io.so: sbox-io.c
-	@echo "CC $@"
-	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -shared sbox-io.c -o sbox-io.so
-
-install: $(SHARED_OBJS) $(PROGS)
+install: sbox-seccomp.so sbox-aa.so $(PROGS)
 	$(Q)for prog in ${PROGS}; do \
 		path=${BIN_DIR}/$$prog; \
 		echo "CP $$prog $$path"; \
 		cp $$prog $$path; \
-	done \
+	done
 
-	$(Q)for so in ${SHARED_OBJS}; do \
-		path=${LIB_DIR}/$$so; \
-		echo "CP $$so $$path"; \
-		cp $$so $$path; \
-	done \
+	@path=${LIB_DIR}/sbox-seccomp.so; \
+	echo "CP sbox-seccomp.so $$path"; \
+	cp sbox-seccomp.so $$path; \
+
+	@path=${LIB_DIR}/sbox-aa.so; \
+	echo "CP sbox-aa.so $$path"; \
+	cp sbox-aa.so $$path; \
 
 uninstall:
 	$(Q)for prog in ${PROGS}; do \
 		path=${BIN_DIR}/$$prog; \
 		echo "RM $$path"; \
 		rm $$path; \
-	done \
-
-	$(Q)for so in ${SHARED_OBJS}; do \
-		path=${LIB_DIR}/$$so; \
-		echo "RM $$path"; \
-		rm $$path; \
-	done \
+	done
+	@echo "RM sbox-aa.so"
+	$(Q)rm ${LIB_DIR}/sbox-aa.so
+	@echo "RM sbox-seccomp.so"
+	$(Q)rm ${LIB_DIR}/sbox-seccomp.so
 
 clean:
 	@echo "CLEAN"
