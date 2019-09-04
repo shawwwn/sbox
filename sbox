@@ -137,6 +137,12 @@ function help {
 	echo "	-g, --cgroup CONTROLLERS:PATH"
 	echo "		Add sandbox's main process to control group(s)."
 	echo ""
+	echo "	-c, --auto-commit"
+	echo "		Auto commit file system changes to snapshot when exit."
+	echo ""
+	echo "	-m, --auto-merge"
+	echo "		Auto merge snapshot to rootfs when exit."
+	echo ""
 	echo "	-j, --join"
 	echo "		Join a running sandbox."
 	echo ""
@@ -169,6 +175,8 @@ for arg in "$@"; do
 		"--user-root")            set -- "$@" "-u" ;;
 		"--snapshot-dir")         set -- "$@" "-d" ;;
 		"--join")                 set -- "$@" "-j" ;;
+		"--auto-commit")          set -- "$@" "-c" ;;
+		"--auto-merge")           set -- "$@" "-m" ;;
 		"--cgroup")               set -- "$@" "-g" ;;
 		"--no-new-privs")         set -- "$@" "-N" ;;
 		"--seccomp-blacklist")    set -- "$@" "-B" ;;
@@ -188,13 +196,15 @@ BLACKLIST=
 AA_PROFILE=
 AA_PROFILE_NEW=
 CGROUPS=
-while getopts n:u:d:jg:NB:D:A:vh opt; do
+while getopts n:u:d:jcmg:NB:D:A:vh opt; do
 	case $opt in
 		n)                  CONTAINER_NAME=$OPTARG ;;
 		u)                  MAP_USER_ROOT="--map-root-user"
 		                    USER=$OPTARG ;;
 		d)                  SNAPSHOT_DIR=$OPTARG ;;
 		j)                  JOIN=true ;;
+		c)                  AUTO_COMMIT=true ;; # env var
+		c)                  AUTO_MERGE=true ;; # env var
 		g)                  CGROUPS="$CGROUPS$OPTARG|" ;;
 		N)                  NO_NEW_PRIVS=true ;;
 		B)                  IFS=',' read -a SYSCALL_DENYS <<< "$OPTARG"
@@ -903,45 +913,68 @@ tree -Ca "dirty"
 size=$(du -sPh "dirty" | cut -f1-1)
 verbose_cmd=$($VERBOSE && echo '--verbose')
 echo "$size data generated."
-while true; do
-	read -p "> Commit changes to snapshot? [Y/n] " -e yn
-	case $yn in
-		"" | [Yy]* )
-			sbox-fstool commit "$CONTAINER_NAME" "$verbose_cmd" \
-				--snapshot-dir "$SNAPSHOT_DIR" && \
-			echo "commited to $(realpath $SNAPSHOT_DIR)"
-			break
-			;;
-		[Nn]* )
-			echo "Abort."
-			$VERBOSE && echo "remove $(realpath -m dirty)"
-			rm -r "dirty" >/dev/null 2>&1
-			exit 0
-			;;
-		* ) ;;
-	esac
-done
+
+echo "auto: $AUTO_COMMIT"
+if [ -z "$AUTO_COMMIT" ]; then
+	while true; do
+		read -p "> Commit changes to snapshot? [Y/n] " -e yn
+		case $yn in
+			"" | [Yy]* )
+				sbox-fstool commit "$CONTAINER_NAME" "$verbose_cmd" \
+					--snapshot-dir "$SNAPSHOT_DIR" && \
+				echo "committed to $(realpath $SNAPSHOT_DIR)"
+				break
+				;;
+			[Nn]* )
+				echo "Abort."
+				$VERBOSE && echo "remove $(realpath -m dirty)"
+				rm -r "dirty" >/dev/null 2>&1
+				exit 0
+				;;
+			* ) ;;
+		esac
+	done
+elif $AUTO_COMMIT; then
+	echo "auto committing ..."
+	sbox-fstool commit "$CONTAINER_NAME" "$verbose_cmd" \
+		--snapshot-dir "$SNAPSHOT_DIR" && \
+	echo "committed to $(realpath $SNAPSHOT_DIR)"
+else
+	echo "discard changes"
+	$VERBOSE && echo "remove $(realpath -m dirty)"
+	rm -r "dirty" >/dev/null 2>&1
+	exit 0
+fi
 
 size=$(du -sPh "$SNAPSHOT_DIR" | cut -f1-1)
 file_count=$(find "$SNAPSHOT_DIR" -type f | wc -l)
 dir_count=$(find "$SNAPSHOT_DIR" -mindepth 1 -type d | wc -l)
 echo "Snapshot size $size ($file_count files, $dir_count directories)."
-while true; do
-	read -p "> Merge snapshot with local filesystem? [N/y] " -e yn
-	case $yn in
-		[Yy]* ) 
-			sbox-fstool merge "$CONTAINER_NAME" "$verbose_cmd" \
-				--snapshot-dir "$SNAPSHOT_DIR" \
-				--rootfs-dir '\' && \
-			echo "snapshot merged"
-			break
-			;;
-		"" | [Nn]* ) 
-			echo "Abort."
-			exit
-			;;
-		* ) ;;
-	esac
-done
+
+if [ -z $AUTO_MERGE ]; then
+	while true; do
+		read -p "> Merge snapshot with local filesystem? [N/y] " -e yn
+		case $yn in
+			[Yy]* ) 
+				sbox-fstool merge "$CONTAINER_NAME" "$verbose_cmd" \
+					--snapshot-dir "$SNAPSHOT_DIR" \
+					--rootfs-dir '\' && \
+				echo "snapshot merged"
+				break
+				;;
+			"" | [Nn]* ) 
+				echo "Abort."
+				exit
+				;;
+			* ) ;;
+		esac
+	done
+elif $AUTO_MERGE; then
+	echo "auto merging ..."
+	sbox-fstool merge "$CONTAINER_NAME" "$verbose_cmd" \
+		--snapshot-dir "$SNAPSHOT_DIR" \
+		--rootfs-dir '\' && \
+	echo "snapshot merged"
+fi
 
 popd >/dev/null
