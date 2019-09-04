@@ -1,4 +1,4 @@
-PROGS = sbox sbox-fstool
+PROGS = sbox sbox-fstool sbox-mgt
 BIN_DIR = /usr/bin
 LIB_DIR = /usr/lib
 CC = gcc
