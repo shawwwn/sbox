@@ -121,12 +121,13 @@ set_pid_env() {
 #############################################################
 kill_proc_nice() {
 	local pid=$1
+	if ! ps -p $pid >/dev/null; then return 0; fi
 
 	local killed=false
 	local i=0
 
 	kill -SIGINT $pid
-	for ((i=0; i<=5; i++)); do
+	for ((i=0; i<20; i++)); do # 2s timeout
 		if ! ps -p $pid >/dev/null; then
 			killed=true
 			break
@@ -136,7 +137,7 @@ kill_proc_nice() {
 	if $killed; then return 0; fi
 
 	kill -SIGTERM $pid
-	for ((i=0; i<=5; i++)); do
+	for ((i=0; i<30; i++)); do # 3s timeout
 		if ! ps -p $pid >/dev/null; then
 			killed=true
 			break
@@ -146,6 +147,19 @@ kill_proc_nice() {
 	if $killed; then return 0; fi
 
 	kill -SIGKILL $pid
+}
+
+#############################################################
+# Trying to terminate a process tree nicely
+#############################################################
+kill_tree_nice() {
+	local pid=$1
+
+	for child in $(ps -o "pid" --no-headers --ppid $pid); do
+		kill_tree_nice $child
+	done
+
+	kill_proc_nice $pid
 }
 
 
@@ -161,15 +175,11 @@ if [ "$CMD" = "stop" ]; then
 	cpid=$(get_nth_ppid $spid 3) # container pid
 
 	# set target process' environment variable
-	if $AUTO_COMMIT; then
-		set_pid_env $cpid AUTO_COMMIT "true"
-	fi
-	if $AUTO_MERGE; then
-		set_pid_env $cpid AUTO_MERGE "true"
-	fi
+	set_pid_env $cpid AUTO_COMMIT "$AUTO_COMMIT"
+	set_pid_env $cpid AUTO_MERGE "$AUTO_MERGE"
 
 	# kill target process
-	kill_proc_nice $spid
+	kill_tree_nice $spid
 
 elif [ "$CMD" = "join" ]; then
 	echo "WIP" # TODO: ...
