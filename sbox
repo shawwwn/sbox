@@ -914,7 +914,6 @@ size=$(du -sPh "dirty" | cut -f1-1)
 verbose_cmd=$($VERBOSE && echo '--verbose')
 echo "$size data generated."
 
-echo "auto: $AUTO_COMMIT"
 if [ -z "$AUTO_COMMIT" ]; then
 	while true; do
 		read -p "> Commit changes to snapshot? [Y/n] " -e yn
@@ -975,6 +974,8 @@ elif $AUTO_MERGE; then
 		--snapshot-dir "$SNAPSHOT_DIR" \
 		--rootfs-dir '\' && \
 	echo "snapshot merged"
+else
+	echo "Abort."
 fi
 
 popd >/dev/null

@@ -1,0 +1,179 @@
+#!/bin/bash
+#
+# sbox
+# Sandbox instance management.
+#
+# Copyright: 2019 Shawwwn, shawwwn1@gmail.com
+# License: MIT
+#
+# Usage: sbox-mgt ACTION [ARGS...] [OPTION]
+#
+
+function help {
+	local executable=$(basename $0)
+	echo "usage: $executable stop [NAME] [-c|-m|-v]"
+	echo "       $executable join [NAME] [-v]"
+	echo "       $executable [-h|--help]"
+	echo "Sandbox instance management."
+	echo ""
+	echo "	stop:"
+	echo "		Terminate sandbox'ed program."
+	echo "		Specify whether to commit/merge change with flags -c/-m."
+	echo ""
+	echo "	join:"
+	echo "		TODO: move feature from sbox to sbox-mgt"
+	echo ""
+	echo "	-c, --auto-commit                Auto commit file system changes"
+	echo "	                                 to snapshot when exit"
+	echo "	-m, --auto-merge                 Auto merge snapshot to rootfs"
+	echo "	                                 when exit."
+	echo "	-v, --verbose                    Print more infomation."
+	echo "	-h, --help                       Display this help and exit."
+}
+
+# process command line arguments
+VERBOSE=false
+AUTO_COMMIT=false
+AUTO_MERGE=false
+ARGS=$(getopt -q \
+	-o "cmvh" \
+	-l "auto-commit,auto-merge:,verbose,help" \
+	-n "sbox-mgt" -- "$@")
+if [ $? -ne 0 ]; then
+	echo "Invalid Arguments!"
+	exit 2
+fi
+
+eval set -- "$ARGS"
+while true; do
+	case "$1" in
+		-c|--auto-commit)
+			AUTO_COMMIT=true
+			shift 1 ;;
+		-m|--auto-merge)
+			AUTO_MERGE=true
+			shift 1 ;;
+		-v|--verbose)
+			echo "verbose on"
+			VERBOSE=true 
+			shift ;;
+		-h|--help)
+			help
+			shift
+			exit ;;
+		--)
+			shift
+			break ;;
+	esac
+done
+
+# globals
+CMD=$(echo "$1" | awk '{print tolower($0)}')
+CONTAINER_NAME="$([ -z "$2" ] && echo 'default' || echo "$2")"
+
+
+
+#############################################################
+# Get the nth parent pid, start from given pid
+#############################################################
+get_nth_ppid() {
+	local pid=$1
+	local n=$2
+
+	local ppid=$(ps --no-headers -o ppid "$pid" | xargs) # trim result from 'ps'
+	[ -z n ] && n=1
+	[ $n -eq 0 ] && echo "$pid" && return
+
+	if (( $n > 1 )); then
+		get_nth_ppid "$ppid" $((n-1))
+	else
+		echo "$ppid"
+	fi
+}
+
+#############################################################
+# Set pid's environment variable
+#############################################################
+set_pid_env() {
+	local pid=$1
+	local var=$2
+	local val="$3"
+
+	if [ -z "$3" ]; then
+		# unset $var
+		gdb -n -q -p $pid <<<"""
+			call (int) unsetenv(\"$var\")
+			set confirm off
+			quit
+		""" >/dev/null
+	else
+		# set $var
+		gdb -n -q -p $pid <<<"""
+			call (int) setenv(\"$var\", \"$val\")
+			set confirm off
+			quit
+		""" >/dev/null
+	fi
+}
+
+#############################################################
+# Trying to terminate a process nicely
+#############################################################
+kill_proc_nice() {
+	local pid=$1
+
+	local killed=false
+	local i=0
+
+	kill -SIGINT $pid
+	for ((i=0; i<=5; i++)); do
+		if ! ps -p $pid >/dev/null; then
+			killed=true
+			break
+		fi
+		sleep 0.1
+	done
+	if $killed; then return 0; fi
+
+	kill -SIGTERM $pid
+	for ((i=0; i<=5; i++)); do
+		if ! ps -p $pid >/dev/null; then
+			killed=true
+			break
+		fi
+		sleep 0.1
+	done
+	if $killed; then return 0; fi
+
+	kill -SIGKILL $pid
+}
+
+
+
+# main()
+spid=$(cat /tmp/sbox/$CONTAINER_NAME/container.pid) # sandbox'ed program pid
+if [ -z $spid ] || (! ps -p $spid >/dev/null); then
+	echo -e "Container \"$CONTAINER_NAME\" is not running." >&2
+	exit 1
+fi
+
+if [ "$CMD" = "stop" ]; then
+	cpid=$(get_nth_ppid $spid 3) # container pid
+
+	# set target process' environment variable
+	if $AUTO_COMMIT; then
+		set_pid_env $cpid AUTO_COMMIT "true"
+	fi
+	if $AUTO_MERGE; then
+		set_pid_env $cpid AUTO_MERGE "true"
+	fi
+
+	# kill target process
+	kill_proc_nice $spid
+
+elif [ "$CMD" = "join" ]; then
+	echo "WIP" # TODO: ...
+fi
+
+
+echo "done!"
