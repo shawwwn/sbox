@@ -3,7 +3,7 @@
 A tool to commit, prune, merge filesystem image created by sbox.
 
 ```bash
-sbox ACTION NAME [OPTION]
+sbox-fstool ACTION NAME [OPTION]
 ```
 
 ### Sample Usages:

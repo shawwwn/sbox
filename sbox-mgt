@@ -11,18 +11,19 @@
 
 function help {
 	local executable=$(basename $0)
-	echo "usage: $executable stop [NAME] [-c|-m|-v]"
-	echo "       $executable join [NAME] [-v]"
+	echo "usage: $executable stop [-n NAME|-c|-m|-v]"
+	echo "       $executable join [-n NAME|-v]"
 	echo "       $executable [-h|--help]"
 	echo "Sandbox instance management."
 	echo ""
 	echo "	stop:"
-	echo "		Terminate sandbox'ed program."
-	echo "		Specify whether to commit/merge change with flags -c/-m."
+	echo "		Kill sandbox'ed program."
+	echo "		Specify whether to commit/merge changes with flags -c/-m."
 	echo ""
 	echo "	join:"
 	echo "		TODO: move feature from sbox to sbox-mgt"
 	echo ""
+	echo "	-n, --container-name             Name of the target sandbox."
 	echo "	-c, --auto-commit                Auto commit file system changes"
 	echo "	                                 to snapshot when exit"
 	echo "	-m, --auto-merge                 Auto merge snapshot to rootfs"
@@ -35,9 +36,10 @@ function help {
 VERBOSE=false
 AUTO_COMMIT=false
 AUTO_MERGE=false
+CONTAINER_NAME="default"
 ARGS=$(getopt -q \
-	-o "cmvh" \
-	-l "auto-commit,auto-merge:,verbose,help" \
+	-o "n:cmvh" \
+	-l "container-name:,auto-commit,auto-merge,verbose,help" \
 	-n "sbox-mgt" -- "$@")
 if [ $? -ne 0 ]; then
 	echo "Invalid Arguments!"
@@ -47,12 +49,15 @@ fi
 eval set -- "$ARGS"
 while true; do
 	case "$1" in
+		-n|--container-name)
+			CONTAINER_NAME="$2"
+			shift 2 ;;
 		-c|--auto-commit)
 			AUTO_COMMIT=true
-			shift 1 ;;
+			shift ;;
 		-m|--auto-merge)
 			AUTO_MERGE=true
-			shift 1 ;;
+			shift ;;
 		-v|--verbose)
 			echo "verbose on"
 			VERBOSE=true 
@@ -69,7 +74,6 @@ done
 
 # globals
 CMD=$(echo "$1" | awk '{print tolower($0)}')
-CONTAINER_NAME="$([ -z "$2" ] && echo 'default' || echo "$2")"
 
 
 
@@ -165,13 +169,14 @@ kill_tree_nice() {
 
 
 # main()
-spid=$(cat /tmp/sbox/$CONTAINER_NAME/container.pid) # sandbox'ed program pid
-if [ -z $spid ] || (! ps -p $spid >/dev/null); then
-	echo -e "Container \"$CONTAINER_NAME\" is not running." >&2
-	exit 1
-fi
+spid=$(cat /tmp/sbox/$CONTAINER_NAME/container.pid 2>/dev/null) # sandbox'ed program pid
 
 if [ "$CMD" = "stop" ]; then
+	if [ -z $spid ] || (! ps -p $spid >/dev/null); then
+		echo -e "Container \"$CONTAINER_NAME\" is not running." >&2
+		exit 1
+	fi
+
 	cpid=$(get_nth_ppid $spid 3) # container pid
 
 	# set target process' environment variable
@@ -183,7 +188,7 @@ if [ "$CMD" = "stop" ]; then
 
 elif [ "$CMD" = "join" ]; then
 	echo "WIP" # TODO: ...
+else
+	help
 fi
 
-
-echo "done!"
