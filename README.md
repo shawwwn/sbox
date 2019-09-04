@@ -70,5 +70,6 @@ make install # copy executeables to /usr/bin
 
 * [sbox](docs/sbox.md)
 * [sbox-fstool](docs/sbox-fstool.md)
+* [sbox-mgt](docs/sbox-mgt.md)
 * [sbox-seccomp.so](docs/sbox-seccomp.so.md)
 * [sbox-aa.so](docs/sbox-aa.so.md)

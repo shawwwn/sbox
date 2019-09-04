@@ -24,13 +24,13 @@ sbox-mgt join -n sbox2 htop
 * **stop**
 
     Kill sandbox'ed program, stop a running sandbox.\
-    Specify whether to commit/merge changes with flags -c/-m.\
+    Specify whether to commit/merge changes with flags -c/-m.
     
 * **join**
 
     *sbox*'s default policy forbids creating a sandbox when there is one running under the same name.\
     This flag allows *sbox* to send progam (specified in `ARGS`) into in an existing sandbox environment.\
-    Any program sent by this flag will be forcibly terminated(SIGKILL) when the main program exits.\
+    Any program sent by this flag will be forcibly terminated(SIGKILL) when the main program exits.
 
 ### OPTION:
 
