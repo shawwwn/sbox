@@ -214,9 +214,8 @@ true_or_false() {
 # process options
 VERBOSE=false
 OPTIND=1
-BLACKLIST=
 AA_PROFILE=
-AA_PROFILE_NEW=
+AA_PROFILE_NAMES=
 CGROUPS=
 
 while getopts n:u:d:c:g:NB:D:A:vh opt; do
@@ -272,7 +271,7 @@ fi
 #############################################################
 # Globals:
 #     AA_PROFILE
-#     AA_PROFILE_NEW
+#     AA_PROFILE_NAMES
 #############################################################
 apparmor_setup() {
 	if [ ! -z "$AA_PROFILE" ]; then
@@ -290,9 +289,9 @@ apparmor_setup() {
 		local profs_new=$(apparmor_parser -N "$AA_PROFILE")
 		echo "apparmor profile: (${AA_PROFILE[@]})"
 		if [ -z $profs_old ]; then
-			AA_PROFILE_NEW=($profs_new)
+			AA_PROFILE_NAMES=($profs_new)
 		else
-			AA_PROFILE_NEW=($(echo "$profs_new" | grep -v ${profs_old[@]/#/-e })) # excludes olds from news
+			AA_PROFILE_NAMES=($(echo "$profs_new" | grep -v ${profs_old[@]/#/-e })) # excludes olds from news
 		fi
 		apparmor_parser -a "$AA_PROFILE" >/dev/null 2>&1 # load profile file
 		AA_PROFILE=($profs_new) # store profile name(s) instead of profile file
@@ -303,11 +302,11 @@ apparmor_teardown() {
 	enable -f sbox-aa.so aa_remove_profile
 	$VERBOSE && echo "reset apparmor"
 	local prof
-	if [ ! -z "${AA_PROFILE_NEW[@]}" ]; then
-		$VERBOSE && echo "unload apparmor profile: ${AA_PROFILE_NEW[@]}"
-		aa_remove_profile ${AA_PROFILE_NEW[@]}
+	if [ ! -z "${AA_PROFILE_NAMES[@]}" ]; then
+		$VERBOSE && echo "unload apparmor profile: ${AA_PROFILE_NAMES[@]}"
+		aa_remove_profile ${AA_PROFILE_NAMES[@]}
 	fi
-	unset AA_PROFILE_NEW
+	unset AA_PROFILE_NAMES
 }
 apparmor_setup
 
@@ -819,6 +818,14 @@ gen_supported_ns_flags() {
 	echo "$flags"
 }
 
+#############################################################
+# Save current sandbox's settings to file.
+# Globals:
+#     MAP_USER_ROOT
+#############################################################
+save_config() {
+	# TODO: ...
+}
 
 
 
@@ -839,6 +846,9 @@ sudo -u $USER mkfifo $PIPE1 $PIPE2
 $VERBOSE && echo "eth_setup() start"
 eth_init
 eth_setup $PIPE1 $PIPE2 & # async
+
+# save current sandbox's settings
+save_config "/tmp$PREFIX_DIR/$CONTAINER_NAME/config"
 
 # syscall name to kernel reference number
 SYSCALL_DENYS=($(syscall2nums "${SYSCALL_DENYS[@]}"))
