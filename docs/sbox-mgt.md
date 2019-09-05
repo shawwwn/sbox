@@ -58,5 +58,5 @@ sbox-mgt join -n sandbox1 htop
 
 ### Note:
 
-None
+If not used with flag **-c|-m**, default action will be to discard filesystem changes.
 
