@@ -96,7 +96,7 @@ CAP_SYSLOG,\
 CAP_WAKE_ALARM\
 "
 
-function help {
+help() {
 	echo "usage: $0: [OPTION] PROGRAM"
 	echo "Run <PROGRAM> in a sandbox environment without writting to rootfs."
 	echo ""
@@ -140,9 +140,6 @@ function help {
 	echo "	-c, --auto-commit"
 	echo "		Auto commit file system changes to snapshot when exit."
 	echo ""
-	echo "	-m, --auto-merge"
-	echo "		Auto merge snapshot to rootfs when exit."
-	echo ""
 	echo "	-j, --join"
 	echo "		Join a running sandbox."
 	echo ""
@@ -153,7 +150,10 @@ function help {
 	echo "		Display this help and exit."
 }
 
-function mount_teardown {
+#############################################################
+# Clean up operations during exit
+#############################################################
+mount_teardown() {
 	# umount overlayfs
 	if mountpoint -q "/tmp$PREFIX_DIR/$CONTAINER_NAME/rootfs"; then
 		umount "/tmp$PREFIX_DIR/$CONTAINER_NAME/rootfs"
@@ -176,7 +176,6 @@ for arg in "$@"; do
 		"--snapshot-dir")         set -- "$@" "-d" ;;
 		"--join")                 set -- "$@" "-j" ;;
 		"--auto-commit")          set -- "$@" "-c" ;;
-		"--auto-merge")           set -- "$@" "-m" ;;
 		"--cgroup")               set -- "$@" "-g" ;;
 		"--no-new-privs")         set -- "$@" "-N" ;;
 		"--seccomp-blacklist")    set -- "$@" "-B" ;;
@@ -188,6 +187,34 @@ for arg in "$@"; do
 	esac
 done
 
+#############################################################
+# Evalution command line arg's value into simple true or false
+#############################################################
+true_or_false() {
+	local opt="$1"
+	shopt -s nocasematch
+
+	# remove starting '=' if found
+	local first_char=$(cut -c 1 <<<"$opt")
+	if [ "$first_char" = "=" ]; then
+		opt=$(cut -c 2- <<<"$opt")
+	fi
+
+	if [[ "$opt" == "y" ]] \
+	|| [[ "$opt" == "yes" ]] \
+	|| [[ "$opt" == "true" ]] \
+	|| [[ "$opt" == "t" ]]; then
+		echo "true"
+	elif [[ "$opt" == "n" ]] \
+	|| [[ "$opt" == "no" ]] \
+	|| [[ "$opt" == "f" ]] \
+	|| [[ "$opt" == "false" ]]; then
+		echo "false"
+	fi
+
+	shopt -u nocasematch
+}
+
 # process options
 VERBOSE=false
 JOIN=false
@@ -196,15 +223,18 @@ BLACKLIST=
 AA_PROFILE=
 AA_PROFILE_NEW=
 CGROUPS=
-while getopts n:u:d:jcmg:NB:D:A:vh opt; do
+while getopts n:u:d:jc:g:NB:D:A:vh opt; do
 	case $opt in
 		n)                  CONTAINER_NAME=$OPTARG ;;
 		u)                  MAP_USER_ROOT="--map-root-user"
 		                    USER=$OPTARG ;;
 		d)                  SNAPSHOT_DIR=$OPTARG ;;
 		j)                  JOIN=true ;;
-		c)                  AUTO_COMMIT=true ;; # env var
-		c)                  AUTO_MERGE=true ;; # env var
+		c)                  AUTO_COMMIT="$(true_or_false $OPTARG)" # env var
+		                    if [ -z "$AUTO_COMMIT" ]; then
+		                        echo "Unrecognized Value: $OPTARG" >&2
+		                        exit 2
+		                    fi ;;
 		g)                  CGROUPS="$CGROUPS$OPTARG|" ;;
 		N)                  NO_NEW_PRIVS=true ;;
 		B)                  IFS=',' read -a SYSCALL_DENYS <<< "$OPTARG"
@@ -240,6 +270,7 @@ if [ ! -z "$CGROUPS" ] && [ -z "$(grep '\<cgroup\>' /proc/filesystems)" ]; then
 	echo "cgroup is not enabled!" >&2
 	exit 1
 fi
+
 
 
 
@@ -914,6 +945,7 @@ size=$(du -sPh "dirty" | cut -f1-1)
 verbose_cmd=$($VERBOSE && echo '--verbose')
 echo "$size data generated."
 
+# environment variable: AUTO_COMMIT
 if [ -z "$AUTO_COMMIT" ]; then
 	while true; do
 		read -p "> Commit changes to snapshot? [Y/n] " -e yn
@@ -934,15 +966,16 @@ if [ -z "$AUTO_COMMIT" ]; then
 		esac
 	done
 elif $AUTO_COMMIT; then
-	echo "auto committing ..."
+	echo "auto commit"
 	sbox-fstool commit "$CONTAINER_NAME" "$verbose_cmd" \
 		--snapshot-dir "$SNAPSHOT_DIR" && \
 	echo "committed to $(realpath $SNAPSHOT_DIR)"
+	[ -z "$AUTO_MERGE" ] && exit 0 # when -c flag set via sbox not sbox-mgt
 else
 	echo "discard changes"
 	$VERBOSE && echo "remove $(realpath -m dirty)"
 	rm -r "dirty" >/dev/null 2>&1
-	exit 0
+	[ -z "$AUTO_MERGE" ] && exit 0 # when -c flag set via sbox not sbox-mgt
 fi
 
 size=$(du -sPh "$SNAPSHOT_DIR" | cut -f1-1)
@@ -950,7 +983,8 @@ file_count=$(find "$SNAPSHOT_DIR" -type f | wc -l)
 dir_count=$(find "$SNAPSHOT_DIR" -mindepth 1 -type d | wc -l)
 echo "Snapshot size $size ($file_count files, $dir_count directories)."
 
-if [ -z $AUTO_MERGE ]; then
+# environment variable: AUTO_MERGE
+if [ -z "$AUTO_MERGE" ]; then
 	while true; do
 		read -p "> Merge snapshot with local filesystem? [N/y] " -e yn
 		case $yn in
@@ -969,7 +1003,7 @@ if [ -z $AUTO_MERGE ]; then
 		esac
 	done
 elif $AUTO_MERGE; then
-	echo "auto merging ..."
+	echo "auto merge"
 	sbox-fstool merge "$CONTAINER_NAME" "$verbose_cmd" \
 		--snapshot-dir "$SNAPSHOT_DIR" \
 		--rootfs-dir '\' && \

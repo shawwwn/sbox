@@ -86,6 +86,16 @@ sbox -g cpuset,memory:foo -g cpu:boo bash
     
     Add sandbox's main process(i.e., pid 1 inside sandbox environment) to control group(s).\
     CONTROLLERS is a list of controllers and PATH is the relative path to control groups in the given controllers list.
+
+* **-c, --auto-commit yes|no**
+    
+    Exit sandbox directly, will NOT ask user to commit/merge.\
+    If set to 'yes', auto-commit filesystem changes to snapshot directory.\
+    \
+    NOTE:\
+    Setting this flag to yes will not auto-merge snapshot to rootfs.\
+    Use `sbox-fstool` or `sbox-mgt` for merging operation.
+
     
 * **-j | --join**
     
