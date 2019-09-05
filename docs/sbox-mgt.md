@@ -58,5 +58,5 @@ sbox-mgt join -n sbox2 htop
 
 ### Note:
 
-None
+If not used with flag **-c|-m**, default action will be to discard filesystem changes.
 
