@@ -139,13 +139,14 @@ same_content() {
 # directory will be able to copy over.
 #############################################################
 force_cp() {
+	# cat | tee >(cat >&2) | \
 	cat | \
 	sed -nE "s/cp: cannot.+ '(.+)' .+ '(.+)'/\1 \2/p" | \
 	while IFS=" " read -r to from; do
 		if is_removed "$to"; then 
 			$VERBOSE && echo "force copy: $from ==> $to"
 			rm -r "$to"
-			cp -r "$from" "$to"
+			cp -arTf "$from" "$to"
 		else
 			echo "copy error: $from ==> $to" >&2
 		fi
@@ -191,13 +192,15 @@ commit_all() {
 	find "$path_dirty" -type c -perm 0 | while IFS=$'\n' read -r deleted; do
 		path_relative=$(echo "$deleted" | cut -c$((path_wc+1))-)
 		snapshot=$(realpath -esq "$path_snapshot$path_relative")
-		$VERBOSE && echo "remove deleted file: $snapshot"
-		rm -r "$snapshot"
+		if [ ! -z "$snapshot" ]; then
+			$VERBOSE && echo "remove deleted file: $snapshot"
+			rm -r "$snapshot"
+		fi
 	done
 
 	# move directory
 	$VERBOSE && echo "move dir: $path_dirty -> $path_snapshot"
-	cp -aTf "$path_dirty" "$path_snapshot" 2>&1 | force_cp
+	cp -arTf "$path_dirty" "$path_snapshot" 2>&1 | force_cp
 	rm -r "$path_dirty"
 	# mkdir "$path_dirty"
 }
@@ -279,7 +282,7 @@ merge_all() {
 	# move directory
 	$VERBOSE && echo "move dir: $snapshot_dir -> $rootfs_dir"
 	cp -aTf "$snapshot_dir" "$rootfs_dir" 2>&1 | force_cp
-	rm -r "$snapshot_dir"
+	# rm -r "$snapshot_dir"
 	# mkdir "$snapshot_dir"
 }
 
