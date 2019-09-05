@@ -143,9 +143,6 @@ function help {
 	echo "	-m, --auto-merge"
 	echo "		Auto merge snapshot to rootfs when exit."
 	echo ""
-	echo "	-j, --join"
-	echo "		Join a running sandbox."
-	echo ""
 	echo "	-v, --verbose"
 	echo "		Print more information."
 	echo ""
@@ -174,7 +171,6 @@ for arg in "$@"; do
 		"--container-name")       set -- "$@" "-n" ;;
 		"--user-root")            set -- "$@" "-u" ;;
 		"--snapshot-dir")         set -- "$@" "-d" ;;
-		"--join")                 set -- "$@" "-j" ;;
 		"--auto-commit")          set -- "$@" "-c" ;;
 		"--auto-merge")           set -- "$@" "-m" ;;
 		"--cgroup")               set -- "$@" "-g" ;;
@@ -190,19 +186,17 @@ done
 
 # process options
 VERBOSE=false
-JOIN=false
 OPTIND=1
 BLACKLIST=
 AA_PROFILE=
 AA_PROFILE_NEW=
 CGROUPS=
-while getopts n:u:d:jcmg:NB:D:A:vh opt; do
+while getopts n:u:d:cmg:NB:D:A:vh opt; do
 	case $opt in
 		n)                  CONTAINER_NAME=$OPTARG ;;
 		u)                  MAP_USER_ROOT="--map-root-user"
 		                    USER=$OPTARG ;;
 		d)                  SNAPSHOT_DIR=$OPTARG ;;
-		j)                  JOIN=true ;;
 		c)                  AUTO_COMMIT=true ;; # env var
 		c)                  AUTO_MERGE=true ;; # env var
 		g)                  CGROUPS="$CGROUPS$OPTARG|" ;;
@@ -801,27 +795,8 @@ PID=$(get_container_pid "$CONTAINER_NAME")
 if [ ! -z "$PID" ]; then
 	trap - EXIT INT QUIT TERM HUP # free traps
 	$VERBOSE && echo "running container pid: $PID"
-	if $JOIN; then
-		echo "Joining container \"$CONTAINER_NAME\":"
-		nsenter -a -t $PID --no-fork \
-		bash -c """$(cat <<-EOF
-			ppid=\$(cat /proc/self/status | grep ^PPid: | awk '{print \$2}')
-			cd "/tmp$PREFIX_DIR/$CONTAINER_NAME"
-			exec chroot rootfs \
-				sudo -u $USER \
-					bash -c 'cd ~; exec $@'
-			EOF
-		)"""
-		[ $? == 137 ] && KILLED=true
-		$KILLED && kill -9 $$ # to fix shell's strange behavior when child process was killed(-9) and returned to shell
-		exit 0
-	else
-		echo -e "Container \"$CONTAINER_NAME\" is already running.\n\nUse flag \"--join\" if to join a running container." >&2
-		exit 2
-	fi
-elif $JOIN; then
-	trap - EXIT INT QUIT TERM HUP # free traps
-	echo -e "Joining container \"$CONTAINER_NAME\" failed.\n\nContainer is not running." >&2
+
+	echo -e "Container \"$CONTAINER_NAME\" is already running.\n\nUse \"sbox-mgt join\" to send process into a running container." >&2
 	exit 2
 fi
 
@@ -904,7 +879,8 @@ apparmor_teardown
 eth_teardown
 mount_teardown
 trap - EXIT INT QUIT TERM HUP # free traps
-$KILLED && kill -9 $$ # to fix shell's strange behavior when child process was killed(-9) and returned to shell
+$KILLED && stty sane # to fix shell's strange behavior when child process was killed(-9) then returned to shell
+# $KILLED && kill -9 $$
 
 #Save snapshot
 pushd "/tmp$PREFIX_DIR/$CONTAINER_NAME" >/dev/null

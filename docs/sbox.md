@@ -18,9 +18,6 @@ sbox -u shawwwn bash
 # run bash in sandbox named 'sandbox1'
 sbox -n sandbox1 bash
 
-# run htop in 'sandbox1', monitor processes in sandbox
-sbox -n sandbox1 --join htop
-
 # blacklist syscall uanme() in sandbox
 # running program 'uname' or 'sleep' inside sandbox will result in "Operation not permitted"
 sbox --seccomp-blacklist "uname,nanosleep" bash 
@@ -86,12 +83,6 @@ sbox -g cpuset,memory:foo -g cpu:boo bash
     
     Add sandbox's main process(i.e., pid 1 inside sandbox environment) to control group(s).\
     CONTROLLERS is a list of controllers and PATH is the relative path to control groups in the given controllers list.
-    
-* **-j | --join**
-    
-    *sbox*'s default policy forbids creating a sandbox when there is one running under the same name.\
-    This flag allows *sbox* to send `PROGRAM` into in an existing sandbox environment.\
-    Any program sent by this flag will be forcibly terminated(SIGKILL) when the main program exits.
     
 * **-v | --verbose**
     

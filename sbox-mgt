@@ -17,11 +17,11 @@ function help {
 	echo "Sandbox instance management."
 	echo ""
 	echo "	stop:"
-	echo "		Kill sandbox'ed program."
+	echo "		Kill the sandbox'ed process."
 	echo "		Specify whether to commit/merge changes with flags -c/-m."
 	echo ""
 	echo "	join:"
-	echo "		TODO: move feature from sbox to sbox-mgt"
+	echo "		Send process into a running container."
 	echo ""
 	echo "	-n, --container-name             Name of the target sandbox."
 	echo "	-c, --auto-commit                Auto commit file system changes"
@@ -166,16 +166,36 @@ kill_tree_nice() {
 	kill_proc_nice $pid
 }
 
+#############################################################
+# Return container pid if running
+#############################################################
+get_container_pid() {
+	local name="$1"
+	local pid=$(cat "/tmp/sbox/$name/container.pid" 2>/dev/null)
+	if [ ! -z "$pid" ] && (ps -p "$pid" >/dev/null 2>&1); then
+		echo "$pid"
+		return 0
+	fi
+	return 1;
+}
+
+#############################################################
+# Print error message & exit
+#############################################################
+error_exit() {
+	echo -e "$1" >&2
+	exit 1
+}
+
 
 
 # main()
-spid=$(cat /tmp/sbox/$CONTAINER_NAME/container.pid 2>/dev/null) # sandbox'ed program pid
+spid=$(get_container_pid "$CONTAINER_NAME") # pid of sandbox'ed program
+$VERBOSE && echo "container name: $CONTAINER_NAME"
+$VERBOSE && echo "container pid: $PID"
 
 if [ "$CMD" = "stop" ]; then
-	if [ -z $spid ] || (! ps -p $spid >/dev/null); then
-		echo -e "Container \"$CONTAINER_NAME\" is not running." >&2
-		exit 1
-	fi
+	[ -z $spid ] && error_exit "Container \"$CONTAINER_NAME\" is not running."
 
 	cpid=$(get_nth_ppid $spid 3) # container pid
 
@@ -187,8 +207,28 @@ if [ "$CMD" = "stop" ]; then
 	kill_tree_nice $spid
 
 elif [ "$CMD" = "join" ]; then
-	echo "WIP" # TODO: ...
+	[ -z $spid ] && error_exit "Container \"$CONTAINER_NAME\" is not running."
+
+	# launch process inside namespace
+	echo "Joining container \"$CONTAINER_NAME\":"
+	nsenter -a -t $spid --no-fork \
+	bash -c """$(cat <<-EOF
+		ppid=\$(cat /proc/self/status | grep ^PPid: | awk '{print \$2}')
+		cd "/tmp/sbox/$CONTAINER_NAME"
+		exec chroot rootfs \
+			sudo -u $USER \
+				bash -c 'cd ~; exec $@'
+		EOF
+	)"""
+
+	# fix shell's strange behavior after sandbox's main process was killed(-9) 
+	# thus bringing down joint process
+	stty sane
+	# [ $? == 137 ] && KILLED=true
+	# $KILLED && kill -9 $$ 
+
 else
 	help
+
 fi
 

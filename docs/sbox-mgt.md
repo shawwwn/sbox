@@ -15,8 +15,8 @@ sbox-mgt stop -n sbox1 -c -m
 # Stop container 'default', commit filesystem changes to its snapshot directory.
 sbox-mgt stop -c
 
-# Send/Run `htop` into existing container 'sbox2'.
-sbox-mgt join -n sbox2 htop
+# Run htop in 'sandbox1', monitor processes in that sandbox
+sbox-mgt join -n sandbox1 htop
 ```
 
 ### ACTION:
