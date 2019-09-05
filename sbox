@@ -308,8 +308,6 @@ apparmor_teardown() {
 	fi
 	unset AA_PROFILE_NAMES
 }
-apparmor_setup
-
 
 #############################################################
 # The layer right above rootfs, contains initial settings.
@@ -824,7 +822,28 @@ gen_supported_ns_flags() {
 #     MAP_USER_ROOT
 #############################################################
 save_config() {
-	# TODO: ...
+	local config_file="$1"
+	shift
+	{
+		echo "SBOX_NAME=\"$CONTAINER_NAME\""
+		echo "SBOX_SNAPSHOT_DIR=\"$SNAPSHOT_DIR\""
+		echo "SBOX_CAP_DROPS=\"$CAP_DROPS\""
+		echo "SBOX_SYSCALL_DENYS=\"${SYSCALL_DENYS[@]}\""
+		echo "SBOX_PREFIX_DIR=\"$PREFIX_DIR\""
+		echo "SBOX_CGROUPS=\"$CGROUPS\""
+		echo "SBOX_AA_PROFILE=\"$AA_PROFILE\""
+		echo "SBOX_AA_PROFILE_NAMES=\"$AA_PROFILE_NAMES\""
+		echo "SBOX_NO_NEW_PRIVS=\"$NO_NEW_PRIVS\""
+		echo "SBOX_USER=\"$USER\""
+		echo "SBOX_AUTO_COMMIT=\"$AUTO_COMMIT\""
+		echo "SBOX_EXEC=\"$@\""
+		echo ""
+	} | tee "$config_file" | {
+		if $VERBOSE; then
+			echo "sbox config:"
+			cat
+		fi
+	}
 }
 
 
@@ -839,6 +858,7 @@ if [ ! -z "$PID" ]; then
 	exit 2
 fi
 
+apparmor_setup
 debootstrap_sandbox "$CONTAINER_NAME" # create work files
 PIPE1=$(mktemp -u) # for receiving namespace pid in task
 PIPE2=$(mktemp -u) # for receiving task finish signal
@@ -848,7 +868,7 @@ eth_init
 eth_setup $PIPE1 $PIPE2 & # async
 
 # save current sandbox's settings
-save_config "/tmp$PREFIX_DIR/$CONTAINER_NAME/config"
+save_config "/tmp$PREFIX_DIR/$CONTAINER_NAME/config" $@
 
 # syscall name to kernel reference number
 SYSCALL_DENYS=($(syscall2nums "${SYSCALL_DENYS[@]}"))
