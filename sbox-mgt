@@ -74,7 +74,7 @@ done
 
 # globals
 CMD=$(echo "$1" | awk '{print tolower($0)}')
-
+shift
 
 
 #############################################################
@@ -192,7 +192,7 @@ error_exit() {
 # main()
 spid=$(get_container_pid "$CONTAINER_NAME") # pid of sandbox'ed program
 $VERBOSE && echo "container name: $CONTAINER_NAME"
-$VERBOSE && echo "container pid: $PID"
+$VERBOSE && echo "container pid: $spid"
 
 if [ "$CMD" = "stop" ]; then
 	[ -z $spid ] && error_exit "Container \"$CONTAINER_NAME\" is not running."
@@ -208,6 +208,7 @@ if [ "$CMD" = "stop" ]; then
 
 elif [ "$CMD" = "join" ]; then
 	[ -z $spid ] && error_exit "Container \"$CONTAINER_NAME\" is not running."
+	KILLED=false
 
 	# launch process inside namespace
 	echo "Joining container \"$CONTAINER_NAME\":"
@@ -220,12 +221,15 @@ elif [ "$CMD" = "join" ]; then
 				bash -c 'cd ~; exec $@'
 		EOF
 	)"""
+	[ $? == 137 ] && KILLED=true
 
 	# fix shell's strange behavior after sandbox's main process was killed(-9) 
 	# thus bringing down joint process
-	stty sane
-	# [ $? == 137 ] && KILLED=true
-	# $KILLED && kill -9 $$ 
+	if $KILLED; then
+		echo "sandbox is being torn down, exiting ..."
+		stty sane
+		# $KILLED && kill -9 $$ 
+	fi
 
 else
 	help
