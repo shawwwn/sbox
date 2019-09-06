@@ -717,6 +717,7 @@ eth_setup() {
 	fi
 	$VERBOSE && echo "sandbox pid: $pid"
 	echo $pid > "/tmp$PREFIX_DIR/$CONTAINER_NAME/container.pid" # write pid file
+	echo "SBOX_PID=\"$pid\"" >> "/tmp$PREFIX_DIR/$CONTAINER_NAME/config"
 
 	# apply cgroup to sandbox
 	[ ! -z "$CGROUPS" ] && cgroup_apply "$pid" "$CGROUPS"
@@ -823,6 +824,7 @@ gen_supported_ns_flags() {
 #############################################################
 save_config() {
 	local config_file="$1"
+	local pid=$$
 	shift
 	{
 		echo "SBOX_NAME=\"$CONTAINER_NAME\""
@@ -837,7 +839,7 @@ save_config() {
 		echo "SBOX_USER=\"$USER\""
 		echo "SBOX_AUTO_COMMIT=\"$AUTO_COMMIT\""
 		echo "SBOX_EXEC=\"$@\""
-		echo ""
+		echo "SBOX_PPID=\"$pid\"" # parent of the sandbox'ed process
 	} | tee "$config_file" | {
 		if $VERBOSE; then
 			echo "sbox config:"
