@@ -844,6 +844,8 @@ save_config() {
 		if $VERBOSE; then
 			echo "sbox config:"
 			cat
+		else
+			cat >/dev/null; # if pipeline doesn't have an endpoint, previous tee won't work
 		fi
 	}
 }

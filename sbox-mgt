@@ -13,6 +13,7 @@ function help {
 	local executable=$(basename $0)
 	echo "usage: $executable stop [-n NAME|-c|-m|-v]"
 	echo "       $executable join [-n NAME|-v]"
+	echo "       $executable list [-n NAME|-a|-v]"
 	echo "       $executable [-h|--help]"
 	echo "Sandbox instance management."
 	echo ""
@@ -23,11 +24,19 @@ function help {
 	echo "	join:"
 	echo "		Send process into a running container."
 	echo ""
+	echo "	list:"
+	echo "		List *running* containers. Use with -v for more details."
+	echo ""
+	echo "	remove:"
+	echo "		Remove an inactive container."
+	echo ""
 	echo "	-n, --container-name             Name of the target sandbox."
 	echo "	-c, --auto-commit                Auto commit file system changes"
 	echo "	                                 to snapshot when exit"
 	echo "	-m, --auto-merge                 Auto merge snapshot to rootfs"
 	echo "	                                 when exit."
+	echo "	-a, --list-all                   List all containers, including"
+	echo "	                                 ones that are not running."
 	echo "	-v, --verbose                    Print more infomation."
 	echo "	-h, --help                       Display this help and exit."
 }
@@ -36,10 +45,12 @@ function help {
 VERBOSE=false
 AUTO_COMMIT=false
 AUTO_MERGE=false
+LIST_ALL=false
 CONTAINER_NAME="default"
+SET_NAME=false
 ARGS=$(getopt -q \
-	-o "n:cmvh" \
-	-l "container-name:,auto-commit,auto-merge,verbose,help" \
+	-o "n:cmavh" \
+	-l "container-name:,auto-commit,auto-merge,list-all,verbose,help" \
 	-n "sbox-mgt" -- "$@")
 if [ $? -ne 0 ]; then
 	echo "Invalid Arguments!"
@@ -51,6 +62,7 @@ while true; do
 	case "$1" in
 		-n|--container-name)
 			CONTAINER_NAME="$2"
+			SET_NAME=true
 			shift 2 ;;
 		-c|--auto-commit)
 			AUTO_COMMIT=true
@@ -58,8 +70,10 @@ while true; do
 		-m|--auto-merge)
 			AUTO_MERGE=true
 			shift ;;
+		-a|--list-all)
+			LIST_ALL=true
+			shift ;;
 		-v|--verbose)
-			echo "verbose on"
 			VERBOSE=true 
 			shift ;;
 		-h|--help)
@@ -187,14 +201,56 @@ error_exit() {
 	exit 1
 }
 
+#############################################################
+# Return a list of containers under base directory
+#############################################################
+list_containers() {
+	local base_dir=$(realpath "$1") # /tmp/sbox
+
+	pushd "$base_dir" >/dev/null
+	local name
+	find * -maxdepth 0 -type d | \
+		while IFS= read -r name; do
+			if [ -f "$base_dir/$name/config" ]; then
+				echo "$name"
+			fi
+		done
+	popd >/dev/null
+}
+
+#############################################################
+# Return a list of containers under base directory
+#############################################################
+show_container_info() {
+	local name="$1"
+
+	if get_container_pid "$CONTAINER_NAME" >/dev/null; then
+		echo -e "\e[32m$1\e[0m" # active container, print in green
+	else
+		echo -e "\e[31m$1\e[0m" # inactive container, print in red
+	fi
+
+	# source configuration file in a subshell
+	$VERBOSE && {
+		source "/tmp/sbox/$CONTAINER_NAME/config"
+		echo "snapshot_dir=$SBOX_SNAPSHOT_DIR"
+		echo "dirty_dir=$SBOX_DIRTY_DIR"
+		echo "rootfs=$SBOX_ROOTFS"
+		echo "mapped_user=$SBOX_USER"
+		echo "exec=$SBOX_EXEC"
+		echo "ppid=$SBOX_PID"
+		echo "pid=$SBOX_PPID"
+	}
+}
+
 
 
 # main()
 spid=$(get_container_pid "$CONTAINER_NAME") # pid of sandbox'ed program
-$VERBOSE && echo "container name: $CONTAINER_NAME"
-$VERBOSE && echo "container pid: $spid"
+$SET_NAME && $VERBOSE && echo "container name: $CONTAINER_NAME"
 
 if [ "$CMD" = "stop" ]; then
+	$VERBOSE && echo "container pid: $spid"
 	[ -z $spid ] && error_exit "Container \"$CONTAINER_NAME\" is not running."
 
 	cpid=$(get_nth_ppid $spid 3) # container pid
@@ -207,6 +263,7 @@ if [ "$CMD" = "stop" ]; then
 	kill_tree_nice $spid
 
 elif [ "$CMD" = "join" ]; then
+	$VERBOSE && echo "container pid: $spid"
 	[ -z $spid ] && error_exit "Container \"$CONTAINER_NAME\" is not running."
 	KILLED=false
 
@@ -229,6 +286,20 @@ elif [ "$CMD" = "join" ]; then
 		echo "sandbox is being torn down, exiting ..."
 		stty sane
 		# $KILLED && kill -9 $$ 
+	fi
+
+elif [ "$CMD" = "list" ]; then
+	if $SET_NAME; then
+		show_container_info "$CONTAINER_NAME"
+	else
+		# traverse containers
+		list_containers "/tmp/sbox" | while IFS= read -r CONTAINER_NAME; do
+			# filter if needed
+			if ! ($LIST_ALL || get_container_pid "$CONTAINER_NAME" >/dev/null); then
+				continue
+			fi
+			show_container_info "$CONTAINER_NAME"
+		done
 	fi
 
 else
