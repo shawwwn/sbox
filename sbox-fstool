@@ -34,7 +34,8 @@ function help {
 	echo ""
 	echo "	-s, --snapshot-dir SNAPS_DIR     Sandbox's snapshot directory,"
 	echo "	                                 default='/tmp/sbox/<NAME>/snapshot'."
-	echo "	                                 Sandbox's writable layer, default='/'."
+	echo "	-t, --dirty-dir DIRTY_DIR        Sandbox's dirty directory,"
+	echo "	                                 default='/tmp/sbox/<NAME>/dirty'."
 	echo "	-r, --rootfs-dir ROOTFS_DIR      System's rootfs for mounting beneath "
 	echo "	                                 sandbox's writable layer, default='/'."
 	echo "	-v, --verbose                    Print more infomation."
@@ -44,8 +45,8 @@ function help {
 # process command line arguments
 VERBOSE=false
 ARGS=$(getopt -q \
-	-o "s:r:vh" \
-	-l "snapshot-dir:,rootfs-dir:,verbose,help" \
+	-o "s:t:r:vh" \
+	-l "snapshot-dir:,dirty-dir:,rootfs-dir:,verbose,help" \
 	-n "sbox-fstool" -- "$@")
 if [ $? -ne 0 ]; then
 	echo "Invalid Arguments!"
@@ -57,10 +58,13 @@ while true; do
 	case "$1" in
 		-s|--snapshot-dir)
 			SNAPS_DIR="$2"
-			shift 2;;
+			shift 2 ;;
+		-t|--dirty-dir)
+			DIRTY_DIR="$2"
+			shift 2 ;;
 		-r|--rootfs-dir)
 			ROOTFS_DIR="$2"
-			shift 2;;
+			shift 2 ;;
 		-v|--verbose)
 			echo "verbose on"
 			VERBOSE=true 
@@ -78,11 +82,11 @@ done
 # globals
 CMD=$(echo "$1" | awk '{print tolower($0)}')
 CONTAINER_NAME="$([ -z "$2" ] && echo 'default' || echo "$2")"
-[ -z "$DIRTY_DIR" ] && DIRTY_DIR="/tmp/sbox/$CONTAINER_NAME/dirty"
 [ -z "$SNAPS_DIR" ] && SNAPS_DIR="/tmp/sbox/$CONTAINER_NAME/snapshot"
+[ -z "$DIRTY_DIR" ] && DIRTY_DIR="/tmp/sbox/$CONTAINER_NAME/dirty"
 [ -z "$ROOTFS_DIR" ] && ROOTFS_DIR="/"
-DIRTY_DIR=$(realpath $DIRTY_DIR 2>/dev/null)
 SNAPS_DIR=$(realpath $SNAPS_DIR 2>/dev/null)
+DIRTY_DIR=$(realpath $DIRTY_DIR 2>/dev/null)
 ROOTFS_DIR=$(realpath $ROOTFS_DIR 2>/dev/null)
 
 

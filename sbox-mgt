@@ -47,7 +47,7 @@ AUTO_COMMIT=false
 AUTO_MERGE=false
 LIST_ALL=false
 CONTAINER_NAME="default"
-SET_NAME=false
+NAME_SET=false
 ARGS=$(getopt -q \
 	-o "n:cmavh" \
 	-l "container-name:,auto-commit,auto-merge,list-all,verbose,help" \
@@ -62,7 +62,7 @@ while true; do
 	case "$1" in
 		-n|--container-name)
 			CONTAINER_NAME="$2"
-			SET_NAME=true
+			NAME_SET=true
 			shift 2 ;;
 		-c|--auto-commit)
 			AUTO_COMMIT=true
@@ -204,7 +204,7 @@ error_exit() {
 #############################################################
 # Return a list of containers under base directory
 #############################################################
-list_containers() {
+container_list() {
 	local base_dir=$(realpath "$1") # /tmp/sbox
 
 	pushd "$base_dir" >/dev/null
@@ -225,29 +225,76 @@ show_container_info() {
 	local name="$1"
 
 	if get_container_pid "$CONTAINER_NAME" >/dev/null; then
-		echo -e "\e[32m$1\e[0m" # active container, print in green
+		printf "\e[32m$1\e[0m" # active container, print in green
+		$VERBOSE && echo ": running" || echo ""
 	else
-		echo -e "\e[31m$1\e[0m" # inactive container, print in red
+		printf "\e[31m$1\e[0m" # inactive container, print in red
+		$VERBOSE && echo ": inactive" || echo ""
 	fi
 
 	# source configuration file in a subshell
-	$VERBOSE && {
-		source "/tmp/sbox/$CONTAINER_NAME/config"
-		echo "snapshot_dir=$SBOX_SNAPSHOT_DIR"
-		echo "dirty_dir=$SBOX_DIRTY_DIR"
-		echo "rootfs=$SBOX_ROOTFS"
-		echo "mapped_user=$SBOX_USER"
-		echo "exec=$SBOX_EXEC"
-		echo "ppid=$SBOX_PID"
-		echo "pid=$SBOX_PPID"
-	}
+	$VERBOSE && (
+		source "/tmp/sbox/$CONTAINER_NAME/config";
+		echo -e "\e[33mlocation\e[0m=$SBOX_LOC";
+		echo -e "\e[33msnapshot_dir\e[0m=$SBOX_SNAPSHOT_DIR";
+		echo -e "\e[33mdirty_dir\e[0m=$SBOX_DIRTY_DIR";
+		echo -e "\e[33mwork_dir\e[0m=$SBOX_WORK_DIR";
+		echo -e "\e[33mrootfs\e[0m=$SBOX_ROOTFS_DIR";
+		echo -e "\e[33mmapped_user\e[0m=$SBOX_USER";
+		echo -e "\e[33mexec\e[0m=$SBOX_EXEC";
+		echo -e "\e[33mppid\e[0m=$SBOX_PID";
+		echo -e "\e[33mpid\e[0m=$SBOX_PPID";
+		echo "";
+	)
+}
+
+#############################################################
+# Prompt user to enter Y/N
+#############################################################
+prompt_yes_no() {
+	local prompt="$1"
+	local default="$2" # true|false
+	[ -z "$default" ] && default=false # default is 'no'
+
+	local yn
+	while true; do
+		read -p "$prompt" -e yn
+		case $yn in
+			[Yy]* )         return 0 ;;
+			[Nn]* )         return 1 ;;
+			"" )            if $default; then return 0; else return 1; fi ;;
+			* )             return 2 ;;
+		esac
+	done
+
+	return 3
+}
+
+#############################################################
+# Remove a sandbox's internal directory
+#############################################################
+remove_dir() {
+	local tgt_dir="$1" # dir to delete
+	local root_dir="$2" # sandbox's root dir
+	local default="$3" # true|false
+	[ -z "$default" ] && default=false # default is 'no'
+
+	# manual remove if internal dir is not under sbox's root dir
+	if [ -d "$tgt_dir" ] && ! (echo "$tgt_dir" | grep -q "$root_dir"); then
+		if prompt_yes_no "> delete '$tgt_dir'? [Y/n] " $default; then
+			$VERBOSE && echo "Removing $tgt_dir";
+			rm -r "$tgt_dir";
+		else
+			$VERBOSE && echo "skip";
+		fi
+	fi
 }
 
 
 
 # main()
 spid=$(get_container_pid "$CONTAINER_NAME") # pid of sandbox'ed program
-$SET_NAME && $VERBOSE && echo "container name: $CONTAINER_NAME"
+$NAME_SET && $VERBOSE && echo "container name: $CONTAINER_NAME"
 
 if [ "$CMD" = "stop" ]; then
 	$VERBOSE && echo "container pid: $spid"
@@ -289,18 +336,32 @@ elif [ "$CMD" = "join" ]; then
 	fi
 
 elif [ "$CMD" = "list" ]; then
-	if $SET_NAME; then
+	if $NAME_SET; then
 		show_container_info "$CONTAINER_NAME"
 	else
-		# traverse containers
-		list_containers "/tmp/sbox" | while IFS= read -r CONTAINER_NAME; do
-			# filter if needed
+		container_list "/tmp/sbox" | while IFS= read -r CONTAINER_NAME; do
+			# filter inactive containers if list-all flag is not present
 			if ! ($LIST_ALL || get_container_pid "$CONTAINER_NAME" >/dev/null); then
 				continue
 			fi
 			show_container_info "$CONTAINER_NAME"
 		done
 	fi
+
+elif [ "$CMD" = "remove" ]; then
+	[ ! -z $spid ] && error_exit "Container \"$CONTAINER_NAME\" is running.\n\nRun 'sbox-mgt stop -n $CONTAINER_NAME' first."
+	[ ! -f "/tmp/sbox/$CONTAINER_NAME/config" ] && error_exit "Container \"$CONTAINER_NAME\" has already been deleted."
+
+	(
+		source "/tmp/sbox/$CONTAINER_NAME/config";
+
+		remove_dir "$SBOX_SNAPSHOT_DIR" "$SBOX_LOC" false
+		remove_dir "$SBOX_DIRTY_DIR" "$SBOX_LOC" true
+		remove_dir "$SBOX_WORK_DIR" "$SBOX_LOC" true
+
+		$VERBOSE && echo "Removing $SBOX_LOC";
+		rm -r "$SBOX_LOC";
+	)
 
 else
 	help
