@@ -111,7 +111,9 @@ sbox -g cpuset,memory:foo -g cpu:boo bash
 
 - If `-r USER` is not set, sBox will not create custom *user namespace*, so all other namespaces will be children of the namespace the invoking process is in(e.g., shell's user namespace). Do not set this flag if custom *user namespace* breaks your program. On the other hand, if this flag is set, all other namespaces will be children to the newly created *user namespace*.
 
-- Running sandbox inside an existing sandbox will work for the first time; howerever, it will fail if you continue to launch sandbox in a "layer-two" sandbox with errors like 'overlayfs mount failed'. This is not a bug with **sbox** but a limitation(bug?) with OverlayFS[(\*)](https://github.com/rkt/rkt/issues/1537). Currently, OverlayFS can't mount on itself for more than two layers.
+- Running sbox on top of two consecutive sbox's will likely to fail because most kernel only support maximum two layers of OverlayFS mount. To overcome this limit, you need to compile your own kernel with flag `FILESYSTEM_MAX_STACK_DEPTH` set to be > 2.
+
+    Read more about this issue (here)[https://git.kernel.org/pub/scm/linux/kernel/git/apw/overlayfs.git/tree/include/linux/fs.h?h=overlayfs.v12apw1#n491] and (here)[https://stackoverflow.com/questions/31044982/how-to-use-multiple-lower-layers-in-overlayfs].
 
 - `seccomp` is implemented in C as a bash builtin command(unfortunately there is no way to do this in pure bash). 
 

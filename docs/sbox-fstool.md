@@ -23,7 +23,7 @@ ssbox-fstool merge default
 
 * **commit**
     
-    Move uncommitted files from */tmp/sbox/NAME/dirty* to `SNAPS_DIR` directory.
+    Move uncommitted files from `DIRTY_DIR` to `SNAPS_DIR` directory.
     
 * **prune**
 
@@ -45,7 +45,12 @@ Default: default
 * **-s | --snapshot-dir SNAPS_DIR**
 
     Used by action {*commit*, *prune*, *merge*}.\
-    Default: /tmp/sbox/<NAME>/sandbox
+    Default: /tmp/sbox/<NAME>/snapshot
+
+* **-d | --dirty-dir DIRTY_DIR**
+
+    Used by action {*commit*}.\
+    Default: /tmp/sbox/<NAME>/dirty
     
 * **-r | --rootfs-dir ROOTFS_DIR**
 
