@@ -292,6 +292,21 @@ fi
 
 
 
+#############################################################
+# Get bash color code of given type of files
+#############################################################
+get_color_from_type() {
+	local type="$1"
+	
+	local c;
+	IFS=":"
+	for c in $LS_COLORS; do
+		if [ "${c%=*}" = "$type" ]; then
+			echo "${c#*=}"
+			break
+		fi
+	done
+}
 
 #############################################################
 # Globals:
@@ -991,7 +1006,8 @@ $KILLED && stty sane # to fix shell's strange behavior when child process was ki
 #Save snapshot
 pushd "$MGT_DIR/$CONTAINER_NAME" >/dev/null
 
-tree -Ca "$DIRTY_DIR"
+color_code=$(printf "\e[%sm\/\e[m" "$(get_color_from_type di)")
+tree -q -Ca "$DIRTY_DIR" | sed -E "1s/(.*)/$color_code/"  2>/dev/null
 size=$(du -sPh "$DIRTY_DIR" | cut -f1-1)
 verbose_cmd=$($VERBOSE && echo '--verbose')
 echo "$size data generated."
