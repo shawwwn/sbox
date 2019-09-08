@@ -105,7 +105,7 @@ is_removed() {
 #############################################################
 is_opaque() {
 	if [ -d "$1" ] && 
-		getfattr -d -m "" "$1" 2>/dev/null | \
+		getfattr --no-dereference --dump -m "" "$1" 2>/dev/null | \
 			grep "trusted.overlay.opaque=\"y\"" >/dev/null 2>&1; then
 			return 0
 	fi
@@ -188,7 +188,7 @@ commit_all() {
 				rm -r "$snapshot"
 			fi
 		fi
-	done < <(getfattr --dump --match="trusted.overlay.opaque" \
+	done < <(getfattr --no-dereference --dump --match="trusted.overlay.opaque" \
 					--absolute-names --physical --recursive \
 					"$path_dirty")
 
