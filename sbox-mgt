@@ -312,9 +312,10 @@ if [ "$CMD" = "stop" ]; then
 elif [ "$CMD" = "join" ]; then
 	$VERBOSE && echo "container pid: $spid"
 	[ -z $spid ] && error_exit "Container \"$CONTAINER_NAME\" is not running."
-	KILLED=false
+	[ -z $1 ] && error_exit "Nothing to run."
 
 	# launch process inside namespace
+	local killed=false
 	echo "Joining container \"$CONTAINER_NAME\":"
 	nsenter -a -t $spid --no-fork \
 	bash -c """$(cat <<-EOF
@@ -325,14 +326,14 @@ elif [ "$CMD" = "join" ]; then
 				bash -c 'cd ~; exec $@'
 		EOF
 	)"""
-	[ $? == 137 ] && KILLED=true
+	[ $? == 137 ] && killed=true
 
 	# fix shell's strange behavior after sandbox's main process was killed(-9) 
 	# thus bringing down joint process
-	if $KILLED; then
+	if $killed; then
 		echo "sandbox is being torn down, exiting ..."
 		stty sane
-		# $KILLED && kill -9 $$ 
+		# $killed && kill -9 $$ 
 	fi
 
 elif [ "$CMD" = "list" ]; then
