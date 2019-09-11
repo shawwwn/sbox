@@ -907,7 +907,6 @@ save_config() {
 
 
 
-KILLED=false
 PID=$(get_container_pid "$CONTAINER_NAME")
 if [ ! -z "$PID" ]; then
 	trap - EXIT INT QUIT TERM HUP # free traps
@@ -994,14 +993,18 @@ unshare --kill-child --fork \
 		echo "Error: program shouldn't reach here." >&2
 		EOF
 	)"""
-[ $? == 137 ] && KILLED=true
-
+ret=$?
+if [ $ret == 137 ] \
+|| [ $ret == 130 ]; then
+	# ignore SIGKILL, SIGTERM
+	ret=0
+	stty sane
+	echo "Terminated."
+fi
 apparmor_teardown
 eth_teardown
 mount_teardown
 trap - EXIT INT QUIT TERM HUP # free traps
-$KILLED && stty sane # to fix shell's strange behavior when child process was killed(-9) then returned to shell
-# $KILLED && kill -9 $$
 
 #Save snapshot
 pushd "$MGT_DIR/$CONTAINER_NAME" >/dev/null
@@ -1028,7 +1031,7 @@ if [ -z "$AUTO_COMMIT" ]; then
 				echo "Abort."
 				$VERBOSE && echo "remove $DIRTY_DIR"
 				rm -r "$DIRTY_DIR" >/dev/null 2>&1
-				exit 0
+				exit $ret
 				;;
 			* ) ;;
 		esac
@@ -1039,12 +1042,12 @@ elif $AUTO_COMMIT; then
 		--dirty-dir "$DIRTY_DIR" \
 		--snapshot-dir "$SNAPSHOT_DIR" && \
 	echo "committed to $SNAPSHOT_DIR"
-	[ -z "$AUTO_MERGE" ] && exit 0 # when -c flag set via sbox not sbox-mgt
+	[ -z "$AUTO_MERGE" ] && exit $ret # when -c flag set via sbox not sbox-mgt
 else
 	echo "discard changes"
 	$VERBOSE && echo "remove $DIRTY_DIR"
 	rm -r "$DIRTY_DIR" >/dev/null 2>&1
-	[ -z "$AUTO_MERGE" ] && exit 0 # when -c flag set via sbox not sbox-mgt
+	[ -z "$AUTO_MERGE" ] && exit $ret # when -c flag set via sbox not sbox-mgt
 fi
 
 size=$(du -sPh "$SNAPSHOT_DIR" | cut -f1-1)
@@ -1066,7 +1069,7 @@ if [ -z "$AUTO_MERGE" ]; then
 				;;
 			"" | [Nn]* ) 
 				echo "Abort."
-				exit
+				exit $ret
 				;;
 			* ) ;;
 		esac
@@ -1082,3 +1085,4 @@ else
 fi
 
 popd >/dev/null
+exit $ret
