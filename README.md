@@ -61,7 +61,7 @@ The [default sercurity profile](docs/sbox.md#note) of **sBox** can be a bit aggr
 
 ```bash
 # dependencies, make adjustments for package managers other than apt
-apt-get install iproute2 net-tools iptables bash grep diffutils findutils sudo ipcalc pcregrep tree attr libseccomp2 libseccomp-dev cgroup-tools libapparmor-dev
+apt-get install iproute2 net-tools iptables bash grep diffutils findutils sudo ipcalc pcregrep tree attr libseccomp2 libseccomp-dev apparmor-utils cgroup-tools libapparmor-dev
 make install # copy executeables to /usr/bin
 ```
 
