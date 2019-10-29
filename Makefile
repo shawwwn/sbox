@@ -16,11 +16,11 @@ all: sbox-seccomp.so sbox-aa.so
 
 sbox-seccomp.so: sbox-seccomp.c
 	@echo "CC $@"
-	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -lseccomp -shared sbox-seccomp.c -o sbox-seccomp.so
+	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -lseccomp -fPIC -shared sbox-seccomp.c -o sbox-seccomp.so
 
 sbox-aa.so: sbox-aa.c
 	@echo "CC $@"
-	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -lapparmor -shared sbox-aa.c -o sbox-aa.so
+	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -lapparmor -fPIC -shared sbox-aa.c -o sbox-aa.so
 
 install: sbox-seccomp.so sbox-aa.so $(PROGS)
 	$(Q)for prog in ${PROGS}; do \
