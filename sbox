@@ -459,7 +459,7 @@ syscall2num() {
 	local num
 	local re="#define __NR_$fn\s+(\d+)"
 	case "$(uname -m)" in
-		x86-64)
+		x86-64|x86_64)
 			num=$(cat /usr/include/asm/unistd_64.h | pcregrep -i -o1 -e "$re") ;;
 		i386)
 			num=$(cat /usr/include/asm/unistd_32.h | pcregrep -i -o1 -e "$re") ;;
@@ -864,9 +864,10 @@ gen_supported_ns_flags() {
 				flags="$flags --uts" ;;
 			user)
 				[ ! -z "$MAP_USER_ROOT" ] && flags="$flags --user" ;;
+			pid_for_children) # since kernel 4.12
+				;; # do nothing
 			*)
 				echo "Error: unsupported namespace $ns?" >&2
-				exit 1 ;;
 		esac
 	done
 	echo "$flags"
