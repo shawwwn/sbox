@@ -177,8 +177,8 @@ mount_teardown() {
 	rm "$PIPE1" >/dev/null 2>&1
 	rm "$PIPE2" >/dev/null 2>&1
 
-	eth_teardown
-	apparmor_teardown
+	command -v eth_teardown >/dev/null && eth_teardown
+	command -v apparmor_teardown >/dev/null && apparmor_teardown
 }
 trap mount_teardown EXIT
 trap "ret=$?; mount_teardown; exit $ret" INT QUIT TERM HUP
